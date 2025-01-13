@@ -3,13 +3,17 @@ import asyncio
 from decouple import config
 from datetime import datetime
 import bcrypt
+from passlib.hash import bcrypt as passlib_bcrypt
+from app.core.database import get_database
 
 async def seed_all():
     client = None
     try:
-        # Ambil konfigurasi
-        MONGODB_URL = config("MONGODB_URL")
-        DATABASE_NAME = config("DATABASE_NAME")
+        # Ambil konfigurasi dan bersihkan dari komentar
+        MONGODB_URL = config("MONGODB_URL").split('#')[0].strip() # type: ignore
+        DATABASE_NAME = config("DATABASE_NAME").split('#')[0].strip() # type: ignore
+        
+        print(f"Database name: '{DATABASE_NAME}'")  # Debug line dengan quotes
         
         # Buat koneksi dengan timeout yang lebih lama
         print("Menghubungkan ke database...")
@@ -36,7 +40,7 @@ async def seed_all():
         admin_data = {
             "email": config("ADMIN_EMAIL", default="admin@example.com"),
             "username": "admin",
-            "password": bcrypt.hashpw("admin123".encode('utf-8'), bcrypt.gensalt()).decode('utf-8'),
+            "password": passlib_bcrypt.hash("admin123"),
             "is_admin": True,
             "is_active": True,
             "created_at": datetime.utcnow()
@@ -151,5 +155,30 @@ async def seed_all():
             client.close()
             print("Koneksi database ditutup.")
 
+async def migrate_program_types():
+    """Memigrasi program_type yang tidak valid ke nilai yang valid"""
+    db = await get_database()
+    
+    # Mapping untuk migrasi
+    type_mapping = {
+        "seminar": "workshop",
+        "training": "workshop"
+    }
+    
+    # Update semua dokumen dengan program_type yang tidak valid
+    for old_type, new_type in type_mapping.items():
+        result = await db.programs.update_many(
+            {"program_type": old_type},
+            {"$set": {"program_type": new_type}}
+        )
+        print(f"Migrasi {old_type} ke {new_type}: {result.modified_count} dokumen diupdate")
+
+async def run_migrations():
+    """Menjalankan semua migrasi"""
+    print("Menjalankan migrasi...")
+    await migrate_program_types()
+    print("Migrasi selesai!")
+
 if __name__ == "__main__":
-    asyncio.run(seed_all()) 
+    asyncio.run(seed_all())
+    asyncio.run(run_migrations()) 

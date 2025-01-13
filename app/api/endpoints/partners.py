@@ -37,6 +37,16 @@ async def create_partner(
     db=Depends(get_database),
     current_user=Depends(get_current_active_user)
 ):
+    # Validasi URL
+    try:
+        from pydantic import HttpUrl
+        HttpUrl(website_url)
+    except:
+        raise HTTPException(
+            status_code=422,
+            detail="URL website tidak valid. Harap masukkan URL yang valid (contoh: https://www.example.com)"
+        )
+    
     # Upload logo
     logo_url = await save_upload_file(logo)
     

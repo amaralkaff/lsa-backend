@@ -1,50 +1,48 @@
 from fastapi import APIRouter, HTTPException, Depends, Form
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from app.models.schemas import UserResponse, Token
+from app.models.schemas import UserResponse, Token, UserRegister
 from app.core.database import get_database
 from datetime import datetime, timedelta
 from passlib.context import CryptContext
 from jose import jwt
-from decouple import config
+from app.core.config import settings
 
 router = APIRouter()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 
-SECRET_KEY = config("JWT_SECRET_KEY", default="your-secret-key")
-ALGORITHM = config("JWT_ALGORITHM", default="HS256")
-ACCESS_TOKEN_EXPIRE_MINUTES = config("ACCESS_TOKEN_EXPIRE_MINUTES", default=30, cast=int)
-
 def create_access_token(data: dict):
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
 @router.post(
     "/register", 
     response_model=UserResponse,
+    status_code=201,
     summary="Register User Baru",
     description="Mendaftarkan user baru dengan email, username, dan password"
 )
 async def register(
-    email: str = Form(..., description="Email user", email=True),
-    username: str = Form(..., description="Username", min_length=3),
-    password: str = Form(..., description="Password", min_length=6),
+    user: UserRegister,
     db=Depends(get_database)
 ):
     # Check if user exists
-    if await db.users.find_one({"email": email}):
+    if await db.users.find_one({"email": user.email}):
         raise HTTPException(status_code=400, detail="Email sudah terdaftar")
     
+    if await db.users.find_one({"username": user.username}):
+        raise HTTPException(status_code=400, detail="Username sudah digunakan")
+    
     # Hash password
-    hashed_password = pwd_context.hash(password)
+    hashed_password = pwd_context.hash(user.password)
     
     # Prepare user data
     user_data = {
-        "email": email,
-        "username": username,
+        "email": user.email,
+        "username": user.username,
         "password": hashed_password,
         "is_active": True,
         "is_admin": False,

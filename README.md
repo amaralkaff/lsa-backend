@@ -727,76 +727,92 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
 # Import library yang diperlukan
 from fastapi import APIRouter, HTTPException, Depends  # Untuk routing dan error handling
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm  # Untuk implementasi OAuth2
-from app.models.schemas import UserRegister, UserResponse, UserLogin, Token  # Model data untuk user
+from app.models.schemas import UserResponse, Token, UserRegister  # Model data untuk user
 from app.core.database import get_database  # Koneksi database
 from datetime import datetime, timedelta  # Untuk handling waktu dan expiry token
 from passlib.context import CryptContext  # Untuk hashing password
 from jose import jwt  # Untuk JWT encoding/decoding
-from decouple import config  # Untuk mengambil environment variables
+from app.core.config import settings  # Import settings dari config
 
 # Inisialisasi router dan tools
 router = APIRouter()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")  # Setup password hashing
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")  # Setup OAuth2
 
-# Konfigurasi JWT
-SECRET_KEY = config("SECRET_KEY", default="your-secret-key")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
-
 # Fungsi untuk membuat access token
 def create_access_token(data: dict):
     to_encode = data.copy()
-    # Set waktu expired token
-    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    # Set waktu expired token dari settings
+    expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
-    # Encode JWT dengan secret key
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    # Encode JWT dengan secret key dan algoritma dari settings
+    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
 # Endpoint untuk registrasi user baru
-@router.post("/register", response_model=UserResponse)
-async def register(user: UserRegister, db=Depends(get_database)):
+@router.post(
+    "/register", 
+    response_model=UserResponse,
+    status_code=201,
+    summary="Register User Baru",
+    description="Mendaftarkan user baru dengan email, username, dan password"
+)
+async def register(
+    user: UserRegister,
+    db=Depends(get_database)
+):
     # Cek apakah email sudah terdaftar
     if await db.users.find_one({"email": user.email}):
         raise HTTPException(status_code=400, detail="Email sudah terdaftar")
-
-    # Hash password user
+    
+    # Cek apakah username sudah digunakan
+    if await db.users.find_one({"username": user.username}):
+        raise HTTPException(status_code=400, detail="Username sudah digunakan")
+    
+    # Hash password
     hashed_password = pwd_context.hash(user.password)
-
+    
     # Siapkan data user
     user_data = {
-        "email": user.email, # Email user
-        "username": user.username, # Username user
-        "password": hashed_password, # Password user
-        "is_active": True, # User aktif by default
-        "is_admin": False, # Bukan admin by default
-        "created_at": datetime.utcnow() # Timestamp pembuatan
+        "email": user.email,
+        "username": user.username,
+        "password": hashed_password,
+        "is_active": True,
+        "is_admin": False,
+        "created_at": datetime.utcnow()
     }
-
+    
     # Insert user ke database
     result = await db.users.insert_one(user_data)
-
+    
     # Return user yang dibuat
     created_user = await db.users.find_one({"_id": result.inserted_id})
     return created_user
 
 # Endpoint untuk login user
-@router.post("/login", response_model=Token)
-async def login(form_data: OAuth2PasswordRequestForm = Depends(), db=Depends(get_database)):
+@router.post(
+    "/login", 
+    response_model=Token,
+    summary="Login User",
+    description="Login user dengan email dan password untuk mendapatkan access token"
+)
+async def login(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db=Depends(get_database)
+):
     # Cek apakah user ada
     user = await db.users.find_one({"email": form_data.username})
     if not user:
         raise HTTPException(status_code=400, detail="Email atau password salah")
-
+    
     # Verifikasi password
     if not pwd_context.verify(form_data.password, user["password"]):
         raise HTTPException(status_code=400, detail="Email atau password salah")
-
+    
     # Cek status aktif user
     if not user.get("is_active", False):
         raise HTTPException(status_code=400, detail="Akun tidak aktif")
-
+    
     # Buat access token dengan data user
     access_token = create_access_token(
         data={"sub": user["email"], "is_admin": user.get("is_admin", False)}
@@ -960,60 +976,167 @@ Keamanan:
 
 ```python
 # Import library yang diperlukan
-from fastapi import APIRouter, HTTPException, Depends  # Untuk routing dan error handling
+from fastapi import APIRouter, HTTPException, Depends, Form, UploadFile, File, Query  # Untuk routing dan error handling
 from app.models.schemas import ProgramBase, ProgramResponse  # Model data program
 from app.core.database import get_database  # Koneksi database
-from app.api.deps import get_current_user  # Autentikasi user
-from typing import List  # Untuk tipe data list
+from app.api.deps import get_current_active_user  # Autentikasi user
+from app.utils.file_handler import save_upload_file  # Fungsi untuk menyimpan file
+from typing import List, Literal, Union, Optional  # Untuk tipe data
 from datetime import datetime  # Untuk timestamp
+from bson import ObjectId  # Untuk konversi string ke ObjectId
+from bson.errors import InvalidId  # Untuk handling error ObjectId
+from enum import Enum  # Untuk enum tipe program
 
-# Inisialisasi router
-router = APIRouter()
+# Definisi enum untuk tipe program
+class ProgramType(str, Enum):
+    ALL = "all"  # Untuk filter semua program
+    HUMAN_LIBRARY = "human_library"  # Program Human Library
+    WORKSHOP = "workshop"  # Program Workshop
+    SOSIALISASI = "sosialisasi"  # Program Sosialisasi
+
+# Inisialisasi router dengan tag programs
+router = APIRouter(tags=["programs"])
 
 # Endpoint untuk membuat program baru
-@router.post("", response_model=ProgramResponse)
+@router.post(
+    "", 
+    response_model=ProgramResponse,
+    summary="Membuat Program Baru",
+    description="""
+    Membuat program baru dengan gambar.
+    
+    **Format Gambar yang Didukung:**
+    - JPG/JPEG
+    - PNG
+    - GIF
+    
+    **Batasan:**
+    - Ukuran maksimal file: 5MB
+    
+    **Tipe Program yang Tersedia:**
+    - human_library: Program Human Library
+    - workshop: Program Workshop
+    - sosialisasi: Program Sosialisasi
+    """
+)
 async def create_program(
-    program: ProgramBase,  # Data program dari request body
-    db=Depends(get_database),  # Injeksi database connection
-    current_user=Depends(get_current_user)  # Injeksi authenticated user
+    title: str = Form(..., description="Judul program", example="Workshop Pemulihan Mental"),
+    description: str = Form(..., description="Deskripsi program", example="Workshop untuk pemulihan kesehatan mental..."),
+    program_type: ProgramType = Form(
+        ..., 
+        description="Tipe program (human_library, workshop, sosialisasi)",
+        exclude=["ALL"]
+    ),
+    image: UploadFile = File(
+        ..., 
+        description="File gambar untuk program (JPG, PNG, GIF, max 5MB)",
+        media_type="image/*"
+    ),
+    start_date: datetime = Form(..., description="Tanggal mulai program", example="2024-01-01T00:00:00"),
+    end_date: datetime = Form(..., description="Tanggal selesai program", example="2024-01-02T00:00:00"),
+    db=Depends(get_database),
+    current_user=Depends(get_current_active_user)
 ):
-    # Konversi program ke dictionary dan tambah timestamp
-    program_dict = program.model_dump()
-    # Insert ke database dan return program yang dibuat
-    result = await db.programs.insert_one(program_dict)
+    # Upload gambar
+    image_url = await save_upload_file(image)
+    
+    program_data = {
+        "title": title,
+        "description": description,
+        "program_type": program_type.value,
+        "image": image_url,
+        "start_date": start_date,
+        "end_date": end_date,
+        "created_at": datetime.utcnow(),
+        "author": current_user["email"]
+    }
+    
+    # Validasi data program menggunakan ProgramBase
+    program = ProgramBase(**program_data)
+    
+    result = await db.programs.insert_one(program.model_dump())
     created_program = await db.programs.find_one({"_id": result.inserted_id})
     return created_program
 
-# Endpoint untuk mendapatkan semua program
-@router.get("", response_model=List[ProgramResponse])
-async def get_programs(db=Depends(get_database)):
-    # Ambil semua program dari database (max 1000)
-    programs = await db.programs.find().to_list(1000)
+# Endpoint untuk mendapatkan daftar program
+@router.get(
+    "", 
+    response_model=List[ProgramResponse],
+    summary="Mengambil Semua Program",
+    description="""
+    Mengambil daftar program yang tersedia.
+    
+    **Filter Tipe Program:**
+    - all: Menampilkan semua program
+    - human_library: Hanya program human library
+    - workshop: Hanya program workshop
+    - sosialisasi: Hanya program sosialisasi
+    """
+)
+async def get_programs(
+    program_type: ProgramType = Query(
+        ProgramType.ALL,
+        description="Filter berdasarkan tipe program"
+    ),
+    db=Depends(get_database)
+):
+    query = {}
+    if program_type != ProgramType.ALL:
+        query["program_type"] = program_type.value
+        
+    programs = await db.programs.find(query).to_list(1000)
     return programs
 
-# Endpoint untuk mendapatkan program berdasarkan ID
-@router.get("/{program_id}", response_model=ProgramResponse)
+# Endpoint untuk mendapatkan detail program
+@router.get(
+    "/{program_id}", 
+    response_model=ProgramResponse,
+    summary="Mengambil Detail Program",
+    description="Mengambil detail program berdasarkan ID."
+)
 async def get_program(program_id: str, db=Depends(get_database)):
-    from bson import ObjectId  # Untuk konversi string ke ObjectId
-    # Cari program berdasarkan ID
-    program = await db.programs.find_one({"_id": ObjectId(program_id)})
+    try:
+        object_id = ObjectId(program_id)
+    except InvalidId:
+        raise HTTPException(
+            status_code=400,
+            detail="ID program tidak valid. ID harus berupa 24 karakter hex string."
+        )
+    
+    program = await db.programs.find_one({"_id": object_id})
     if not program:
-        raise HTTPException(status_code=404, detail="Program not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Program tidak ditemukan"
+        )
     return program
 
 # Endpoint untuk menghapus program
-@router.delete("/{program_id}")
+@router.delete(
+    "/{program_id}",
+    summary="Menghapus Program",
+    description="Menghapus program berdasarkan ID."
+)
 async def delete_program(
     program_id: str,
     db=Depends(get_database),
-    current_user=Depends(get_current_user)  # Hanya user terautentikasi
+    current_user=Depends(get_current_active_user)
 ):
-    from bson import ObjectId
-    # Hapus program dan cek hasilnya
-    result = await db.programs.delete_one({"_id": ObjectId(program_id)})
+    try:
+        object_id = ObjectId(program_id)
+    except InvalidId:
+        raise HTTPException(
+            status_code=400,
+            detail="ID program tidak valid. ID harus berupa 24 karakter hex string."
+        )
+    
+    result = await db.programs.delete_one({"_id": object_id})
     if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Program not found")
-    return {"message": "Program deleted successfully"}
+        raise HTTPException(
+            status_code=404,
+            detail="Program tidak ditemukan"
+        )
+    return {"message": "Program berhasil dihapus"}
 ```
 
 Modul Programs ini menyediakan endpoint-endpoint untuk:
@@ -1045,74 +1168,104 @@ Catatan penting:
 ```python
 # Import library yang diperlukan
 from fastapi import APIRouter, HTTPException, Depends, Form, UploadFile, File, Query  # Untuk routing dan handling HTTP
-from app.models.schemas import BlogBase, BlogResponse, ResponseEnvelope  # Model data untuk blog
+from app.models.schemas import BlogResponse, ResponseEnvelope  # Model data untuk blog
 from app.core.database import get_database  # Koneksi database
-from app.api.deps import get_current_user  # Autentikasi user
+from app.api.deps import get_current_active_user  # Autentikasi user
 from app.utils.file_handler import save_upload_file  # Fungsi untuk menyimpan file
-from typing import List, Optional  # Tipe data list dan opsional
+from typing import Optional  # Tipe data opsional
 from datetime import datetime  # Untuk timestamp
 import logging  # Untuk logging
 
-# Inisialisasi router dan logger
-router = APIRouter()
-logger = logging.getLogger(__name__)
+router = APIRouter(tags=["blogs"]) # Inisialisasi router
+logger = logging.getLogger(__name__) # Inisialisasi logger
 
 # Endpoint untuk membuat blog baru
-@router.post("", response_model=BlogResponse)
+@router.post(
+    "", 
+    response_model=BlogResponse, 
+    summary="Membuat Blog Baru",
+    description="""
+    Membuat blog baru dengan gambar.
+    
+    **Format Gambar yang Didukung:**
+    - JPG/JPEG
+    - PNG
+    - GIF
+    
+    **Batasan:**
+    - Ukuran maksimal file: 5MB
+    """
+)
+# Endpoint untuk membuat blog baru
 async def create_blog(
-    title: str = Form(...),  # Judul blog (required)
-    content: str = Form(...),  # Konten blog (required)
-    image: Optional[UploadFile] = File(None),  # Gambar blog (optional)
-    db=Depends(get_database),  # Injeksi database
-    current_user=Depends(get_current_user)  # Injeksi user yang terautentikasi
+    title: str = Form(..., description="Judul blog yang akan dibuat", example="Tutorial Python"),
+    content: str = Form(..., description="Konten atau isi blog", example="Python adalah bahasa pemrograman yang mudah dipelajari..."),
+    image: UploadFile = File(
+        ..., 
+        description="File gambar untuk blog (JPG, PNG, GIF, max 5MB)",
+        media_type="image/*"
+    ),
+    db=Depends(get_database),
+    current_user=Depends(get_current_active_user)
 ):
-    # Simpan gambar jika ada
-    image_url = None
-    if image:
-        image_url = await save_upload_file(image)
-
-    # Siapkan data blog
+    """
+    Membuat blog baru dengan gambar.
+    
+    Parameters:
+    - **title**: Judul blog
+    - **content**: Konten blog
+    - **image**: File gambar (max 5MB, format: JPG/PNG/GIF)
+    
+    Returns:
+    - Blog yang berhasil dibuat
+    """
+    # Upload gambar
+    image_url = await save_upload_file(image)
+    
     blog_data = {
         "title": title,
         "content": content,
-        "image_url": image_url,
-        "created_at": datetime.utcnow()  # Tambah timestamp
+        "image": image_url,
+        "created_at": datetime.utcnow(),
+        "author": current_user["email"]
     }
-
-    # Insert ke database dan return blog yang dibuat
+    
     result = await db.blogs.insert_one(blog_data)
     created_blog = await db.blogs.find_one({"_id": result.inserted_id})
     return created_blog
 
-# Endpoint untuk mendapatkan daftar blog dengan paginasi dan pencarian
+# Endpoint untuk mendapatkan semua blog
 @router.get("", response_model=ResponseEnvelope)
 async def get_blogs(
-    skip: int = Query(default=0, ge=0, description="Skip n items"),  # Untuk paginasi
-    limit: int = Query(default=10, ge=1, le=100, description="Limit the number of items"),  # Batasan item per halaman
-    search: Optional[str] = Query(None, description="Search in title and content"),  # Kata kunci pencarian
+    skip: int = Query(default=0, ge=0, description="Skip n items"),
+    limit: int = Query(default=10, ge=1, le=100, description="Limit the number of items"),
+    search: Optional[str] = Query(None, description="Search in title and content"),
     db = Depends(get_database)
 ):
     try:
         logger.info(f"Fetching blogs with skip={skip}, limit={limit}, search={search}")
-
-        # Buat query pencarian jika ada kata kunci
+        
+        # Build query
         query = {}
         if search:
             query["$or"] = [
-                {"title": {"$regex": search, "$options": "i"}},  # Cari di judul
-                {"content": {"$regex": search, "$options": "i"}}  # Cari di konten
+                {"title": {"$regex": search, "$options": "i"}},
+                {"content": {"$regex": search, "$options": "i"}}
             ]
-
-        # Hitung total dokumen
+        
+        # Get total count
         total_count = await db.blogs.count_documents(query)
-
-        # Ambil data dengan paginasi
+        
+        # Get paginated results
         blogs = await db.blogs.find(query).skip(skip).limit(limit).to_list(limit)
-
-        # Return response dengan metadata
+        
+        # Convert ObjectId to string
+        for blog in blogs:
+            blog["_id"] = str(blog["_id"])
+        
         return ResponseEnvelope(
             status="success",
-            message="Blogs retrieved successfully",
+            message="Blog berhasil diambil",
             data=blogs,
             meta={
                 "total": total_count,
@@ -1128,11 +1281,21 @@ async def get_blogs(
 # Endpoint untuk mendapatkan blog berdasarkan ID
 @router.get("/{blog_id}", response_model=BlogResponse)
 async def get_blog(blog_id: str, db=Depends(get_database)):
-    from bson import ObjectId  # Untuk konversi string ke ObjectId
-    # Cari blog berdasarkan ID
-    blog = await db.blogs.find_one({"_id": ObjectId(blog_id)})
+    from bson import ObjectId
+    try:
+        object_id = ObjectId(blog_id)
+    except:
+        raise HTTPException(
+            status_code=400,
+            detail="ID blog tidak valid. ID harus berupa 24 karakter hex string."
+        )
+        
+    blog = await db.blogs.find_one({"_id": object_id})
     if not blog:
-        raise HTTPException(status_code=404, detail="Blog not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Blog tidak ditemukan"
+        )
     return blog
 
 # Endpoint untuk menghapus blog
@@ -1140,14 +1303,24 @@ async def get_blog(blog_id: str, db=Depends(get_database)):
 async def delete_blog(
     blog_id: str,
     db=Depends(get_database),
-    current_user=Depends(get_current_user)  # Hanya user terautentikasi
+    current_user=Depends(get_current_active_user)
 ):
     from bson import ObjectId
-    # Hapus blog dan cek hasilnya
-    result = await db.blogs.delete_one({"_id": ObjectId(blog_id)})
+    try:
+        object_id = ObjectId(blog_id)
+    except:
+        raise HTTPException(
+            status_code=400,
+            detail="ID blog tidak valid. ID harus berupa 24 karakter hex string."
+        )
+        
+    result = await db.blogs.delete_one({"_id": object_id})
     if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Blog not found")
-    return {"message": "Blog deleted successfully"}
+        raise HTTPException(
+            status_code=404,
+            detail="Blog tidak ditemukan"
+        )
+    return {"message": "Blog berhasil dihapus"}
 ```
 
 Modul Blog ini menyediakan endpoint-endpoint untuk:
@@ -1172,76 +1345,121 @@ Fitur utama:
 
 ### Langkah 3: Gallery Module
 
-1. Implementasi gallery endpoints dengan file upload:
+1. Implementasi gallery.py di app/api/endpoints/:
 
 ```python
 # Import library yang diperlukan
-from fastapi import APIRouter, HTTPException, Depends, Form, UploadFile, File  # Untuk routing dan handling HTTP
-from app.models.schemas import GalleryBase, GalleryResponse  # Model data untuk galeri
-from app.core.database import get_database  # Koneksi database
-from app.api.deps import get_current_user  # Autentikasi user
-from app.utils.file_handler import save_upload_file  # Fungsi untuk menyimpan file
-from typing import List  # Tipe data list
-from datetime import datetime  # Untuk timestamp
+from fastapi import APIRouter, HTTPException, Depends, Form, UploadFile, File # Untuk routing dan error handling
+from app.models.schemas import GalleryBase, GalleryResponse # Model data untuk galeri
+from app.core.database import get_database # Koneksi database 
+from app.api.deps import get_current_active_user # Autentikasi user
+from app.utils.file_handler import save_upload_file # Fungsi untuk menyimpan file
+from typing import List # Untuk tipe data list
+from datetime import datetime # Untuk timestamp
+from bson import ObjectId # Untuk konversi string ke ObjectId
 
-# Inisialisasi router
-router = APIRouter()
+router = APIRouter(tags=["gallery"])
 
-# Endpoint untuk membuat galeri baru
-@router.post("", response_model=GalleryResponse)
+@router.post(
+    "", 
+    response_model=GalleryResponse,
+    summary="Menambahkan Foto ke Galeri",
+    description="""
+    Menambahkan foto baru ke galeri.
+    
+    **Format Gambar yang Didukung:**
+    - JPG/JPEG
+    - PNG
+    - GIF
+    
+    **Batasan:**
+    - Ukuran maksimal file: 5MB
+    """
+)
 async def create_gallery(
-    title: str = Form(...),  # Judul galeri (required)
-    description: str = Form(None),  # Deskripsi galeri (optional)
-    image: UploadFile = File(...),  # File gambar (required)
-    db=Depends(get_database),  # Injeksi database
-    current_user=Depends(get_current_user)  # Injeksi user yang terautentikasi
+    title: str = Form(..., description="Judul foto", example="Workshop Batch 2023"),
+    description: str = Form(..., description="Deskripsi foto", example="Dokumentasi kegiatan workshop..."),
+    image: UploadFile = File(
+        ..., 
+        description="File foto (JPG, PNG, GIF, max 5MB)",
+        media_type="image/*"
+    ),
+    db=Depends(get_database),
+    current_user=Depends(get_current_active_user)
 ):
-    # Simpan file gambar dan dapatkan URL-nya
+    # Upload gambar
     image_url = await save_upload_file(image)
-
-    # Siapkan data galeri yang akan disimpan
+    
     gallery_data = {
         "title": title,
         "description": description,
-        "image_url": image_url,
-        "created_at": datetime.utcnow()  # Tambah timestamp
+        "image": image_url,
+        "created_at": datetime.utcnow(),
+        "author": current_user["email"]
     }
-
-    # Insert ke database dan return galeri yang dibuat
+    
     result = await db.gallery.insert_one(gallery_data)
     created_gallery = await db.gallery.find_one({"_id": result.inserted_id})
     return created_gallery
 
-# Endpoint untuk mendapatkan semua galeri
-@router.get("", response_model=List[GalleryResponse])
+@router.get(
+    "", 
+    response_model=List[GalleryResponse],
+    summary="Mengambil Semua Foto Galeri",
+    description="Mengambil daftar semua foto yang ada di galeri."
+)
 async def get_galleries(db=Depends(get_database)):
-    # Ambil semua galeri dari database (max 1000)
     galleries = await db.gallery.find().to_list(1000)
     return galleries
 
-# Endpoint untuk mendapatkan galeri berdasarkan ID
-@router.get("/{gallery_id}", response_model=GalleryResponse)
+@router.get(
+    "/{gallery_id}", 
+    response_model=GalleryResponse,
+    summary="Mengambil Detail Foto",
+    description="Mengambil detail foto berdasarkan ID."
+)
 async def get_gallery(gallery_id: str, db=Depends(get_database)):
-    from bson import ObjectId  # Untuk konversi string ke ObjectId
-    # Cari galeri berdasarkan ID
-    gallery = await db.gallery.find_one({"_id": ObjectId(gallery_id)})
+    try:
+        object_id = ObjectId(gallery_id)
+    except:
+        raise HTTPException(
+            status_code=400,
+            detail="ID galeri tidak valid. ID harus berupa 24 karakter hex string."
+        )
+        
+    gallery = await db.gallery.find_one({"_id": object_id})
     if not gallery:
-        raise HTTPException(status_code=404, detail="Gallery not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Foto tidak ditemukan"
+        )
     return gallery
 
-# Endpoint untuk menghapus galeri
-@router.delete("/{gallery_id}")
+@router.delete(
+    "/{gallery_id}",
+    summary="Menghapus Foto",
+    description="Menghapus foto dari galeri berdasarkan ID."
+)
 async def delete_gallery(
     gallery_id: str,
     db=Depends(get_database),
-    current_user=Depends(get_current_user)  # Hanya user terautentikasi
+    current_user=Depends(get_current_active_user)
 ):
-    from bson import ObjectId
-    # Hapus galeri dan cek hasilnya
-    result = await db.gallery.delete_one({"_id": ObjectId(gallery_id)})
+    try:
+        object_id = ObjectId(gallery_id)
+    except:
+        raise HTTPException(
+            status_code=400,
+            detail="ID galeri tidak valid. ID harus berupa 24 karakter hex string."
+        )
+        
+    result = await db.gallery.delete_one({"_id": object_id})
     if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Gallery not found")
-    return {"message": "Gallery deleted successfully"}
+        raise HTTPException(
+            status_code=404,
+            detail="Foto tidak ditemukan"
+        )
+    return {"message": "Foto berhasil dihapus"}
 ```
 
 Modul Gallery ini menyediakan endpoint-endpoint untuk:
@@ -1265,76 +1483,129 @@ Fitur utama:
 
 ```python
 # Import library yang diperlukan
-from fastapi import APIRouter, HTTPException, Depends, Form, UploadFile, File  # Untuk routing dan handling HTTP
-from app.models.schemas import PartnerBase, PartnerResponse  # Model data untuk partner
-from app.core.database import get_database  # Koneksi database
-from app.api.deps import get_current_user  # Autentikasi user
+from fastapi import APIRouter, HTTPException, Depends, Form, UploadFile, File  # Untuk routing dan error handling
+from app.models.schemas import PartnerBase, PartnerResponse  # Model data partner
+from app.core.database import get_database  # Koneksi database 
+from app.api.deps import get_current_active_user  # Autentikasi user
 from app.utils.file_handler import save_upload_file  # Fungsi untuk menyimpan file
-from typing import List, Optional  # Tipe data list dan opsional
+from typing import List  # Untuk tipe data list
 from datetime import datetime  # Untuk timestamp
+from bson import ObjectId  # Untuk konversi string ke ObjectId
 
-# Inisialisasi router
-router = APIRouter()
+router = APIRouter(tags=["partners"])
 
-# Endpoint untuk membuat partner baru
-@router.post("", response_model=PartnerResponse)
+@router.post(
+    "", 
+    response_model=PartnerResponse,
+    summary="Menambahkan Partner Baru",
+    description="""
+    Menambahkan partner/mitra baru dengan logo.
+    
+    **Format Logo yang Didukung:**
+    - JPG/JPEG
+    - PNG
+    - GIF
+    
+    **Batasan:**
+    - Ukuran maksimal file: 5MB
+    """
+)
 async def create_partner(
-    name: str = Form(...),  # Nama partner (required)
-    description: str = Form(None),  # Deskripsi partner (optional)
-    website_url: str = Form(None),  # URL website partner (optional)
-    image: Optional[UploadFile] = File(None),  # Logo partner (optional)
-    db=Depends(get_database),  # Injeksi database
-    current_user=Depends(get_current_user)  # Injeksi user yang terautentikasi
+    name: str = Form(..., description="Nama partner/mitra", example="Universitas Indonesia"),
+    description: str = Form(..., description="Deskripsi partner/mitra", example="Mitra dalam penyelenggaraan workshop..."),
+    website_url: str = Form(..., description="URL website partner", example="https://www.ui.ac.id"),
+    logo: UploadFile = File(
+        ..., 
+        description="File logo partner (JPG, PNG, GIF, max 5MB)",
+        media_type="image/*"
+    ),
+    db=Depends(get_database),
+    current_user=Depends(get_current_active_user)
 ):
-    # Simpan gambar jika ada
-    image_url = None
-    if image:
-        image_url = await save_upload_file(image)
-
-    # Siapkan data partner
+    # Validasi URL
+    try:
+        from pydantic import HttpUrl
+        HttpUrl(website_url)
+    except:
+        raise HTTPException(
+            status_code=422,
+            detail="URL website tidak valid. Harap masukkan URL yang valid (contoh: https://www.example.com)"
+        )
+    
+    # Upload logo
+    logo_url = await save_upload_file(logo)
+    
     partner_data = {
         "name": name,
         "description": description,
         "website_url": website_url,
-        "image_url": image_url,
-        "created_at": datetime.utcnow()  # Tambah timestamp
+        "logo": logo_url,
+        "created_at": datetime.utcnow(),
+        "author": current_user["email"]
     }
-
-    # Insert ke database dan return partner yang dibuat
+    
     result = await db.partners.insert_one(partner_data)
     created_partner = await db.partners.find_one({"_id": result.inserted_id})
     return created_partner
 
-# Endpoint untuk mendapatkan semua partner
-@router.get("", response_model=List[PartnerResponse])
+@router.get(
+    "", 
+    response_model=List[PartnerResponse],
+    summary="Mengambil Semua Partner",
+    description="Mengambil daftar semua partner/mitra."
+)
 async def get_partners(db=Depends(get_database)):
-    # Ambil semua partner dari database (max 1000)
     partners = await db.partners.find().to_list(1000)
     return partners
 
-# Endpoint untuk mendapatkan partner berdasarkan ID
-@router.get("/{partner_id}", response_model=PartnerResponse)
+@router.get(
+    "/{partner_id}", 
+    response_model=PartnerResponse,
+    summary="Mengambil Detail Partner",
+    description="Mengambil detail partner/mitra berdasarkan ID."
+)
 async def get_partner(partner_id: str, db=Depends(get_database)):
-    from bson import ObjectId  # Untuk konversi string ke ObjectId
-    # Cari partner berdasarkan ID
-    partner = await db.partners.find_one({"_id": ObjectId(partner_id)})
+    try:
+        object_id = ObjectId(partner_id)
+    except:
+        raise HTTPException(
+            status_code=400,
+            detail="ID partner tidak valid. ID harus berupa 24 karakter hex string."
+        )
+        
+    partner = await db.partners.find_one({"_id": object_id})
     if not partner:
-        raise HTTPException(status_code=404, detail="Partner not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Partner tidak ditemukan"
+        )
     return partner
 
-# Endpoint untuk menghapus partner
-@router.delete("/{partner_id}")
+@router.delete(
+    "/{partner_id}",
+    summary="Menghapus Partner",
+    description="Menghapus partner/mitra berdasarkan ID."
+)
 async def delete_partner(
     partner_id: str,
     db=Depends(get_database),
-    current_user=Depends(get_current_user)  # Hanya user terautentikasi
+    current_user=Depends(get_current_active_user)
 ):
-    from bson import ObjectId
-    # Hapus partner dan cek hasilnya
-    result = await db.partners.delete_one({"_id": ObjectId(partner_id)})
+    try:
+        object_id = ObjectId(partner_id)
+    except:
+        raise HTTPException(
+            status_code=400,
+            detail="ID partner tidak valid. ID harus berupa 24 karakter hex string."
+        )
+        
+    result = await db.partners.delete_one({"_id": object_id})
     if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Partner not found")
-    return {"message": "Partner deleted successfully"}
+        raise HTTPException(
+            status_code=404,
+            detail="Partner tidak ditemukan"
+        )
+    return {"message": "Partner berhasil dihapus"}
 ```
 
 Modul Partners ini menyediakan endpoint-endpoint untuk:

@@ -1,12 +1,19 @@
-from fastapi import APIRouter, HTTPException, Depends, Form, UploadFile, File
+from fastapi import APIRouter, HTTPException, Depends, Form, UploadFile, File, Query
 from app.models.schemas import ProgramBase, ProgramResponse
 from app.core.database import get_database
 from app.api.deps import get_current_active_user
 from app.utils.file_handler import save_upload_file
-from typing import List, Literal
+from typing import List, Literal, Union, Optional
 from datetime import datetime
 from bson import ObjectId
 from bson.errors import InvalidId
+from enum import Enum
+
+class ProgramType(str, Enum):
+    ALL = "all"
+    HUMAN_LIBRARY = "human_library"
+    WORKSHOP = "workshop"
+    SOSIALISASI = "sosialisasi"
 
 router = APIRouter(tags=["programs"])
 
@@ -26,17 +33,18 @@ router = APIRouter(tags=["programs"])
     - Ukuran maksimal file: 5MB
     
     **Tipe Program yang Tersedia:**
-    - human_library
-    - workshop
-    - sosialisasi
+    - human_library: Program Human Library
+    - workshop: Program Workshop
+    - sosialisasi: Program Sosialisasi
     """
 )
 async def create_program(
     title: str = Form(..., description="Judul program", example="Workshop Pemulihan Mental"),
     description: str = Form(..., description="Deskripsi program", example="Workshop untuk pemulihan kesehatan mental..."),
-    program_type: Literal["human_library", "workshop", "sosialisasi"] = Form(
+    program_type: ProgramType = Form(
         ..., 
-        description="Tipe program (human_library, workshop, sosialisasi)"
+        description="Tipe program (human_library, workshop, sosialisasi)",
+        exclude=["ALL"]
     ),
     image: UploadFile = File(
         ..., 
@@ -54,7 +62,7 @@ async def create_program(
     program_data = {
         "title": title,
         "description": description,
-        "program_type": program_type,
+        "program_type": program_type.value,
         "image": image_url,
         "start_date": start_date,
         "end_date": end_date,
@@ -73,23 +81,26 @@ async def create_program(
     "", 
     response_model=List[ProgramResponse],
     summary="Mengambil Semua Program",
-    description="Mengambil daftar semua program yang tersedia."
+    description="""
+    Mengambil daftar program yang tersedia.
+    
+    **Filter Tipe Program:**
+    - all: Menampilkan semua program
+    - human_library: Hanya program human library
+    - workshop: Hanya program workshop
+    - sosialisasi: Hanya program sosialisasi
+    """
 )
 async def get_programs(
-    program_type: str = Form(
-        None, 
-        description="Filter berdasarkan tipe program (human_library, workshop, sosialisasi)"
+    program_type: ProgramType = Query(
+        ProgramType.ALL,
+        description="Filter berdasarkan tipe program"
     ),
     db=Depends(get_database)
 ):
     query = {}
-    if program_type:
-        if program_type not in ["human_library", "workshop", "sosialisasi"]:
-            raise HTTPException(
-                status_code=400,
-                detail="Tipe program tidak valid. Harus salah satu dari: human_library, workshop, sosialisasi"
-            )
-        query["program_type"] = program_type
+    if program_type != ProgramType.ALL:
+        query["program_type"] = program_type.value
         
     programs = await db.programs.find(query).to_list(1000)
     return programs

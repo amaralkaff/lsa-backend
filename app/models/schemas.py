@@ -3,6 +3,7 @@ from typing import Optional, Any
 from datetime import datetime
 from bson import ObjectId
 from pydantic_core import core_schema
+from pydantic import HttpUrl
 
 # Custom class untuk validasi ObjectId
 class PyObjectId:
@@ -41,9 +42,24 @@ class UserLogin(BaseModel):
 
 # Model untuk User
 class UserRegister(BaseModel):
-    email: str = Field(..., email=True)
-    username: str = Field(..., min_length=3)
-    password: str = Field(..., min_length=6)
+    email: str = Field(
+        ..., 
+        pattern=r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$",
+        description="Email harus valid",
+        examples=["user@example.com"]
+    )
+    username: str = Field(
+        ..., 
+        min_length=3,
+        description="Username minimal 3 karakter",
+        examples=["johndoe"]
+    )
+    password: str = Field(
+        ..., 
+        min_length=6,
+        description="Password minimal 6 karakter",
+        examples=["strongpassword123"]
+    )
 
 class UserResponse(BaseModel):
     id: PyObjectId = Field(default_factory=ObjectId, alias="_id")
@@ -95,9 +111,9 @@ class GalleryResponse(GalleryBase):
 
 # Model untuk Partner
 class PartnerBase(BaseModel):
-    name: str = Field(..., min_length=3)
-    description: Optional[str] = None
-    website_url: str
+    name: str = Field(..., min_length=3, description="Nama partner/mitra")
+    description: str = Field(..., min_length=10, description="Deskripsi partner/mitra")
+    website_url: HttpUrl = Field(..., description="URL website partner")
     logo: str
     author: str = Field(..., description="Email dari user yang menambahkan partner")
     created_at: datetime = Field(default_factory=datetime.utcnow)

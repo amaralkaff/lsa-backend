@@ -1,8 +1,8 @@
 from motor.motor_asyncio import AsyncIOMotorClient
-from decouple import config
+from app.core.config import settings
+import logging
 
-MONGODB_URL = config("MONGODB_URL", default="mongodb://localhost:27017")
-DATABASE_NAME = config("DATABASE_NAME", default="lembaga_sinergi_analitika")
+logger = logging.getLogger(__name__)
 
 # MongoDB Client
 client = None
@@ -12,13 +12,13 @@ async def connect_to_mongo():
     """Create database connection."""
     global client, db
     try:
-        client = AsyncIOMotorClient(MONGODB_URL)
-        db = client[DATABASE_NAME]
+        client = AsyncIOMotorClient(settings.MONGODB_URL)
+        db = client[settings.MONGODB_DATABASE]
         # Test the connection
         await client.admin.command('ping')
-        print("Successfully connected to MongoDB.")
+        logger.info("Successfully connected to MongoDB.")
     except Exception as e:
-        print(f"Could not connect to MongoDB: {e}")
+        logger.error(f"Could not connect to MongoDB: {e}")
         raise e
 
 async def close_mongo_connection():
@@ -26,11 +26,14 @@ async def close_mongo_connection():
     global client
     if client is not None:
         client.close()
-        print("MongoDB connection closed.")
+        logger.info("MongoDB connection closed.")
 
 async def get_database():
     """Get database instance."""
     global client, db
     if db is None:
         await connect_to_mongo()
+    # Jika sedang testing, gunakan database test
+    if settings.MONGODB_DATABASE == settings.MONGODB_TEST_DB:
+        return client[settings.MONGODB_TEST_DB]
     return db
