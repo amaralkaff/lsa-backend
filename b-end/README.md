@@ -40,27 +40,50 @@ source venv/bin/activate # Aktifkan virtual environment (source venv/bin/activat
 pip install fastapi uvicorn motor pydantic python-jose[cryptography] passlib[bcrypt] python-multipart python-decouple
 ```
 
+atau
+
 2. Buat requirements.txt
 
 ```bash
 pip freeze > requirements.txt # Membuat requirements.txt (pip freeze = pip module freeze)
 ```
 
+3. Install dependencies dari requirements.txt
+
+```bash
+pip install -r requirements.txt # Install dependencies dari requirements.txt
+
+```
+
+```txt
+fastapi==0.110.0
+uvicorn==0.27.1
+motor==3.3.2
+pymongo==4.6.2
+python-decouple==3.8
+python-multipart==0.0.9
+pydantic==2.6.3
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.1.2
+aiofiles==23.2.1
+```
+
 ### Langkah 3: Penjelasan package utama
 
-1. fastapi==0.104.1
+1. fastapi==0.110.0
 
    - Framework web modern dan cepat untuk membangun API
    - Berbasis Python modern (async/await)
    - Fitur validasi otomatis dan dokumentasi OpenAPI
 
-2. uvicorn==0.24.0
+2. uvicorn==0.27.1
 
    - Server ASGI yang cepat untuk menjalankan aplikasi FastAPI
    - Mendukung hot reload untuk development
    - Penanganan WebSocket
 
-3. motor==3.3.1 & pymongo==4.5.0
+3. motor==3.3.2 & pymongo==4.6.2
 
    - Motor: Driver MongoDB async untuk Python
    - PyMongo: Driver MongoDB sync (diperlukan oleh Motor)
@@ -72,13 +95,13 @@ pip freeze > requirements.txt # Membuat requirements.txt (pip freeze = pip modul
    - Membaca variabel environment
    - Memudahkan manajemen konfigurasi
 
-5. python-multipart==0.0.6
+5. python-multipart==0.0.9
 
    - Menangani form data dan file upload
    - Dibutuhkan untuk menerima request multipart/form-data
    - Penting untuk fitur upload file
 
-6. pydantic==2.4.2
+6. pydantic==2.6.3
 
    - Validasi data dan serialisasi
    - Type hints yang powerful
@@ -90,7 +113,7 @@ pip freeze > requirements.txt # Membuat requirements.txt (pip freeze = pip modul
    - Menangani enkripsi dan dekripsi token
    - Fitur keamanan untuk autentikasi
 
-8. passlib[bcrypt]==1.7.4 & bcrypt==4.0.1
+8. passlib[bcrypt]==1.7.4 & bcrypt==4.1.2
 
    - Passlib: Library untuk password hashing
    - Bcrypt: Algoritma hashing yang aman
@@ -105,68 +128,98 @@ pip freeze > requirements.txt # Membuat requirements.txt (pip freeze = pip modul
 
 1. Buat struktur folder berikut:
 
+## Struktur Proyek
+
 ```
 backend/
-├── app/
-│   ├── api/
-│   │   ├── endpoints/
-│   │   │   ├── auth.py
-│   │   │   ├── blog.py
-│   │   │   ├── gallery.py
-│   │   │   ├── partners.py
-│   │   │   └── programs.py
-│   │   └── deps.py
-│   ├── core/
-│   │   └── database.py
-│   ├── models/
-│   │   └── schemas.py
-│   └── utils/
-│       └── file_handler.py
-├── static/
-│   └── uploads/
-├── main.py
-├── seeder.py
-└── .env
+├── app/                    # Folder inti yang berisi seluruh logika aplikasi
+│   ├── api/               # Folder yang berisi semua endpoint API dan dependensi
+│   │   ├── endpoints/     # Folder yang berisi semua endpoint API
+│   │   │   ├── auth.py   # Endpoint untuk autentikasi (login, register)
+│   │   │   ├── blog.py   # Endpoint untuk manajemen blog/artikel
+│   │   │   ├── gallery.py # Endpoint untuk manajemen galeri foto
+│   │   │   ├── partners.py # Endpoint untuk manajemen mitra/partner
+│   │   │   └── programs.py # Endpoint untuk manajemen program/kegiatan
+│   │   └── deps.py       # Berisi dependency injection
+│   ├── core/             # Berisi komponen inti aplikasi
+│   │   ├── config.py     # Konfigurasi aplikasi
+│   │   └── database.py   # Konfigurasi koneksi database MongoDB
+│   ├── models/           # Berisi model data
+│   │   └── schemas.py    # Model untuk validasi data
+│   ├── tests/            # Berisi unit tests
+│   │   ├── conftest.py   # Konfigurasi dan fixtures untuk testing
+│   │   ├── test_auth.py  # Test untuk autentikasi
+│   │   ├── test_blog.py  # Test untuk blog
+│   │   ├── test_gallery.py # Test untuk galeri
+│   │   ├── test_partners.py # Test untuk partner
+│   │   └── test_programs.py # Test untuk program
+│   ├── utils/            # Berisi utility functions
+│   │   └── file_handler.py # Fungsi untuk menangani file uploads
+│   └── main.py          # File utama untuk menjalankan aplikasi
+├── static/              # Folder untuk menyimpan file static
+│   └── uploads/         # Folder untuk menyimpan file uploads
+├── venv/               # Virtual environment Python
+├── .env               # File untuk environment variables
+├── .env.example       # Contoh konfigurasi environment variables
+├── .gitignore        # File untuk mengabaikan file/folder dalam git
+├── pytest.ini        # Konfigurasi untuk pytest
+├── requirements.txt   # Daftar package Python yang dibutuhkan
+└── README.md         # Dokumentasi proyek
 ```
-
-Saya akan menjelaskan fungsi setiap file dan folder dalam struktur proyek FastAPI ini:
 
 ### 1. Folder Root (`backend/`)
 
 - Folder utama yang menampung seluruh proyek
+- Berisi file konfigurasi utama seperti .env dan requirements.txt
+- Tempat menyimpan virtual environment Python
 
 ### 2. Folder `app/`
 
-- Folder inti yang berisi seluruh logika aplikasi
+- Folder inti yang berisi seluruh logika aplikasi 
 - Mengorganisir kode menjadi beberapa modul terpisah
+- Menerapkan prinsip modular dan clean architecture
 
 ### 3. Folder `app/api/`
 
 - Berisi semua endpoint API dan dependensi
 - Mengatur routing dan logika bisnis
+- Implementasi RESTful API dengan FastAPI
 
 #### 3.1 Folder `app/api/endpoints/`
 
-- **auth.py**: Menangani autentikasi (login, register, logout)
-- **blog.py**: Endpoint untuk manajemen blog/artikel
-- **gallery.py**: Endpoint untuk manajemen galeri foto
-- **partners.py**: Endpoint untuk manajemen mitra/partner
-- **programs.py**: Endpoint untuk manajemen program/kegiatan
+- **auth.py**: Menangani autentikasi (login, register, logout) dengan JWT
+- **blog.py**: Endpoint CRUD untuk manajemen blog/artikel dengan gambar
+- **gallery.py**: Endpoint CRUD untuk manajemen galeri foto
+- **partners.py**: Endpoint CRUD untuk manajemen mitra/partner dengan logo
+- **programs.py**: Endpoint CRUD untuk manajemen program/kegiatan dengan gambar
 
 #### 3.2 File `app/api/deps.py`
 
-- Berisi dependency injection
-- Fungsi-fungsi helper untuk autentikasi
-- Validasi token dan user
+- Berisi dependency injection untuk FastAPI
+- Fungsi-fungsi helper untuk autentikasi JWT
+- Validasi token dan user aktif
+- Middleware untuk pengecekan role dan permission
 
 ### 4. Folder `app/core/`
 
 - Berisi komponen inti aplikasi
+- Konfigurasi dan setup dasar aplikasi
+- Koneksi database dan middleware
 
 #### 4.1 File `app/core/database.py`
 
-- Konfigurasi koneksi database MongoDB
-- Fungsi-fungsi untuk manajemen koneksi database
+- Konfigurasi koneksi database MongoDB dengan Motor
+- Fungsi-fungsi async untuk manajemen koneksi database
+- Implementasi database pooling dan retry mechanism
+
+#### 4.2 File `app/core/config.py`
+
+- Konfigurasi aplikasi dari environment variables
+- Membaca variabel environment dari .env
+- Konfigurasi logging dan error handling
+
+
+### 
 
 ### Langkah 1: Setup Database Connection
 
@@ -751,7 +804,7 @@ def create_access_token(data: dict):
 
 # Endpoint untuk registrasi user baru
 @router.post(
-    "/register", 
+    "/register",
     response_model=UserResponse,
     status_code=201,
     summary="Register User Baru",
@@ -764,14 +817,14 @@ async def register(
     # Cek apakah email sudah terdaftar
     if await db.users.find_one({"email": user.email}):
         raise HTTPException(status_code=400, detail="Email sudah terdaftar")
-    
+
     # Cek apakah username sudah digunakan
     if await db.users.find_one({"username": user.username}):
         raise HTTPException(status_code=400, detail="Username sudah digunakan")
-    
+
     # Hash password
     hashed_password = pwd_context.hash(user.password)
-    
+
     # Siapkan data user
     user_data = {
         "email": user.email,
@@ -781,17 +834,17 @@ async def register(
         "is_admin": False,
         "created_at": datetime.utcnow()
     }
-    
+
     # Insert user ke database
     result = await db.users.insert_one(user_data)
-    
+
     # Return user yang dibuat
     created_user = await db.users.find_one({"_id": result.inserted_id})
     return created_user
 
 # Endpoint untuk login user
 @router.post(
-    "/login", 
+    "/login",
     response_model=Token,
     summary="Login User",
     description="Login user dengan email dan password untuk mendapatkan access token"
@@ -804,15 +857,15 @@ async def login(
     user = await db.users.find_one({"email": form_data.username})
     if not user:
         raise HTTPException(status_code=400, detail="Email atau password salah")
-    
+
     # Verifikasi password
     if not pwd_context.verify(form_data.password, user["password"]):
         raise HTTPException(status_code=400, detail="Email atau password salah")
-    
+
     # Cek status aktif user
     if not user.get("is_active", False):
         raise HTTPException(status_code=400, detail="Akun tidak aktif")
-    
+
     # Buat access token dengan data user
     access_token = create_access_token(
         data={"sub": user["email"], "is_admin": user.get("is_admin", False)}
@@ -999,20 +1052,20 @@ router = APIRouter(tags=["programs"])
 
 # Endpoint untuk membuat program baru
 @router.post(
-    "", 
+    "",
     response_model=ProgramResponse,
     summary="Membuat Program Baru",
     description="""
     Membuat program baru dengan gambar.
-    
+
     **Format Gambar yang Didukung:**
     - JPG/JPEG
     - PNG
     - GIF
-    
+
     **Batasan:**
     - Ukuran maksimal file: 5MB
-    
+
     **Tipe Program yang Tersedia:**
     - human_library: Program Human Library
     - workshop: Program Workshop
@@ -1023,12 +1076,12 @@ async def create_program(
     title: str = Form(..., description="Judul program", example="Workshop Pemulihan Mental"),
     description: str = Form(..., description="Deskripsi program", example="Workshop untuk pemulihan kesehatan mental..."),
     program_type: ProgramType = Form(
-        ..., 
+        ...,
         description="Tipe program (human_library, workshop, sosialisasi)",
         exclude=["ALL"]
     ),
     image: UploadFile = File(
-        ..., 
+        ...,
         description="File gambar untuk program (JPG, PNG, GIF, max 5MB)",
         media_type="image/*"
     ),
@@ -1039,7 +1092,7 @@ async def create_program(
 ):
     # Upload gambar
     image_url = await save_upload_file(image)
-    
+
     program_data = {
         "title": title,
         "description": description,
@@ -1050,22 +1103,22 @@ async def create_program(
         "created_at": datetime.utcnow(),
         "author": current_user["email"]
     }
-    
+
     # Validasi data program menggunakan ProgramBase
     program = ProgramBase(**program_data)
-    
+
     result = await db.programs.insert_one(program.model_dump())
     created_program = await db.programs.find_one({"_id": result.inserted_id})
     return created_program
 
 # Endpoint untuk mendapatkan daftar program
 @router.get(
-    "", 
+    "",
     response_model=List[ProgramResponse],
     summary="Mengambil Semua Program",
     description="""
     Mengambil daftar program yang tersedia.
-    
+
     **Filter Tipe Program:**
     - all: Menampilkan semua program
     - human_library: Hanya program human library
@@ -1083,13 +1136,13 @@ async def get_programs(
     query = {}
     if program_type != ProgramType.ALL:
         query["program_type"] = program_type.value
-        
+
     programs = await db.programs.find(query).to_list(1000)
     return programs
 
 # Endpoint untuk mendapatkan detail program
 @router.get(
-    "/{program_id}", 
+    "/{program_id}",
     response_model=ProgramResponse,
     summary="Mengambil Detail Program",
     description="Mengambil detail program berdasarkan ID."
@@ -1102,7 +1155,7 @@ async def get_program(program_id: str, db=Depends(get_database)):
             status_code=400,
             detail="ID program tidak valid. ID harus berupa 24 karakter hex string."
         )
-    
+
     program = await db.programs.find_one({"_id": object_id})
     if not program:
         raise HTTPException(
@@ -1129,7 +1182,7 @@ async def delete_program(
             status_code=400,
             detail="ID program tidak valid. ID harus berupa 24 karakter hex string."
         )
-    
+
     result = await db.programs.delete_one({"_id": object_id})
     if result.deleted_count == 0:
         raise HTTPException(
@@ -1181,17 +1234,17 @@ logger = logging.getLogger(__name__) # Inisialisasi logger
 
 # Endpoint untuk membuat blog baru
 @router.post(
-    "", 
-    response_model=BlogResponse, 
+    "",
+    response_model=BlogResponse,
     summary="Membuat Blog Baru",
     description="""
     Membuat blog baru dengan gambar.
-    
+
     **Format Gambar yang Didukung:**
     - JPG/JPEG
     - PNG
     - GIF
-    
+
     **Batasan:**
     - Ukuran maksimal file: 5MB
     """
@@ -1201,7 +1254,7 @@ async def create_blog(
     title: str = Form(..., description="Judul blog yang akan dibuat", example="Tutorial Python"),
     content: str = Form(..., description="Konten atau isi blog", example="Python adalah bahasa pemrograman yang mudah dipelajari..."),
     image: UploadFile = File(
-        ..., 
+        ...,
         description="File gambar untuk blog (JPG, PNG, GIF, max 5MB)",
         media_type="image/*"
     ),
@@ -1210,18 +1263,18 @@ async def create_blog(
 ):
     """
     Membuat blog baru dengan gambar.
-    
+
     Parameters:
     - **title**: Judul blog
     - **content**: Konten blog
     - **image**: File gambar (max 5MB, format: JPG/PNG/GIF)
-    
+
     Returns:
     - Blog yang berhasil dibuat
     """
     # Upload gambar
     image_url = await save_upload_file(image)
-    
+
     blog_data = {
         "title": title,
         "content": content,
@@ -1229,7 +1282,7 @@ async def create_blog(
         "created_at": datetime.utcnow(),
         "author": current_user["email"]
     }
-    
+
     result = await db.blogs.insert_one(blog_data)
     created_blog = await db.blogs.find_one({"_id": result.inserted_id})
     return created_blog
@@ -1244,7 +1297,7 @@ async def get_blogs(
 ):
     try:
         logger.info(f"Fetching blogs with skip={skip}, limit={limit}, search={search}")
-        
+
         # Build query
         query = {}
         if search:
@@ -1252,17 +1305,17 @@ async def get_blogs(
                 {"title": {"$regex": search, "$options": "i"}},
                 {"content": {"$regex": search, "$options": "i"}}
             ]
-        
+
         # Get total count
         total_count = await db.blogs.count_documents(query)
-        
+
         # Get paginated results
         blogs = await db.blogs.find(query).skip(skip).limit(limit).to_list(limit)
-        
+
         # Convert ObjectId to string
         for blog in blogs:
             blog["_id"] = str(blog["_id"])
-        
+
         return ResponseEnvelope(
             status="success",
             message="Blog berhasil diambil",
@@ -1289,7 +1342,7 @@ async def get_blog(blog_id: str, db=Depends(get_database)):
             status_code=400,
             detail="ID blog tidak valid. ID harus berupa 24 karakter hex string."
         )
-        
+
     blog = await db.blogs.find_one({"_id": object_id})
     if not blog:
         raise HTTPException(
@@ -1313,7 +1366,7 @@ async def delete_blog(
             status_code=400,
             detail="ID blog tidak valid. ID harus berupa 24 karakter hex string."
         )
-        
+
     result = await db.blogs.delete_one({"_id": object_id})
     if result.deleted_count == 0:
         raise HTTPException(
@@ -1351,7 +1404,7 @@ Fitur utama:
 # Import library yang diperlukan
 from fastapi import APIRouter, HTTPException, Depends, Form, UploadFile, File # Untuk routing dan error handling
 from app.models.schemas import GalleryBase, GalleryResponse # Model data untuk galeri
-from app.core.database import get_database # Koneksi database 
+from app.core.database import get_database # Koneksi database
 from app.api.deps import get_current_active_user # Autentikasi user
 from app.utils.file_handler import save_upload_file # Fungsi untuk menyimpan file
 from typing import List # Untuk tipe data list
@@ -1361,17 +1414,17 @@ from bson import ObjectId # Untuk konversi string ke ObjectId
 router = APIRouter(tags=["gallery"])
 
 @router.post(
-    "", 
+    "",
     response_model=GalleryResponse,
     summary="Menambahkan Foto ke Galeri",
     description="""
     Menambahkan foto baru ke galeri.
-    
+
     **Format Gambar yang Didukung:**
     - JPG/JPEG
     - PNG
     - GIF
-    
+
     **Batasan:**
     - Ukuran maksimal file: 5MB
     """
@@ -1380,7 +1433,7 @@ async def create_gallery(
     title: str = Form(..., description="Judul foto", example="Workshop Batch 2023"),
     description: str = Form(..., description="Deskripsi foto", example="Dokumentasi kegiatan workshop..."),
     image: UploadFile = File(
-        ..., 
+        ...,
         description="File foto (JPG, PNG, GIF, max 5MB)",
         media_type="image/*"
     ),
@@ -1389,7 +1442,7 @@ async def create_gallery(
 ):
     # Upload gambar
     image_url = await save_upload_file(image)
-    
+
     gallery_data = {
         "title": title,
         "description": description,
@@ -1397,13 +1450,13 @@ async def create_gallery(
         "created_at": datetime.utcnow(),
         "author": current_user["email"]
     }
-    
+
     result = await db.gallery.insert_one(gallery_data)
     created_gallery = await db.gallery.find_one({"_id": result.inserted_id})
     return created_gallery
 
 @router.get(
-    "", 
+    "",
     response_model=List[GalleryResponse],
     summary="Mengambil Semua Foto Galeri",
     description="Mengambil daftar semua foto yang ada di galeri."
@@ -1413,7 +1466,7 @@ async def get_galleries(db=Depends(get_database)):
     return galleries
 
 @router.get(
-    "/{gallery_id}", 
+    "/{gallery_id}",
     response_model=GalleryResponse,
     summary="Mengambil Detail Foto",
     description="Mengambil detail foto berdasarkan ID."
@@ -1426,7 +1479,7 @@ async def get_gallery(gallery_id: str, db=Depends(get_database)):
             status_code=400,
             detail="ID galeri tidak valid. ID harus berupa 24 karakter hex string."
         )
-        
+
     gallery = await db.gallery.find_one({"_id": object_id})
     if not gallery:
         raise HTTPException(
@@ -1452,7 +1505,7 @@ async def delete_gallery(
             status_code=400,
             detail="ID galeri tidak valid. ID harus berupa 24 karakter hex string."
         )
-        
+
     result = await db.gallery.delete_one({"_id": object_id})
     if result.deleted_count == 0:
         raise HTTPException(
@@ -1485,7 +1538,7 @@ Fitur utama:
 # Import library yang diperlukan
 from fastapi import APIRouter, HTTPException, Depends, Form, UploadFile, File  # Untuk routing dan error handling
 from app.models.schemas import PartnerBase, PartnerResponse  # Model data partner
-from app.core.database import get_database  # Koneksi database 
+from app.core.database import get_database  # Koneksi database
 from app.api.deps import get_current_active_user  # Autentikasi user
 from app.utils.file_handler import save_upload_file  # Fungsi untuk menyimpan file
 from typing import List  # Untuk tipe data list
@@ -1495,17 +1548,17 @@ from bson import ObjectId  # Untuk konversi string ke ObjectId
 router = APIRouter(tags=["partners"])
 
 @router.post(
-    "", 
+    "",
     response_model=PartnerResponse,
     summary="Menambahkan Partner Baru",
     description="""
     Menambahkan partner/mitra baru dengan logo.
-    
+
     **Format Logo yang Didukung:**
     - JPG/JPEG
     - PNG
     - GIF
-    
+
     **Batasan:**
     - Ukuran maksimal file: 5MB
     """
@@ -1515,7 +1568,7 @@ async def create_partner(
     description: str = Form(..., description="Deskripsi partner/mitra", example="Mitra dalam penyelenggaraan workshop..."),
     website_url: str = Form(..., description="URL website partner", example="https://www.ui.ac.id"),
     logo: UploadFile = File(
-        ..., 
+        ...,
         description="File logo partner (JPG, PNG, GIF, max 5MB)",
         media_type="image/*"
     ),
@@ -1531,10 +1584,10 @@ async def create_partner(
             status_code=422,
             detail="URL website tidak valid. Harap masukkan URL yang valid (contoh: https://www.example.com)"
         )
-    
+
     # Upload logo
     logo_url = await save_upload_file(logo)
-    
+
     partner_data = {
         "name": name,
         "description": description,
@@ -1543,13 +1596,13 @@ async def create_partner(
         "created_at": datetime.utcnow(),
         "author": current_user["email"]
     }
-    
+
     result = await db.partners.insert_one(partner_data)
     created_partner = await db.partners.find_one({"_id": result.inserted_id})
     return created_partner
 
 @router.get(
-    "", 
+    "",
     response_model=List[PartnerResponse],
     summary="Mengambil Semua Partner",
     description="Mengambil daftar semua partner/mitra."
@@ -1559,7 +1612,7 @@ async def get_partners(db=Depends(get_database)):
     return partners
 
 @router.get(
-    "/{partner_id}", 
+    "/{partner_id}",
     response_model=PartnerResponse,
     summary="Mengambil Detail Partner",
     description="Mengambil detail partner/mitra berdasarkan ID."
@@ -1572,7 +1625,7 @@ async def get_partner(partner_id: str, db=Depends(get_database)):
             status_code=400,
             detail="ID partner tidak valid. ID harus berupa 24 karakter hex string."
         )
-        
+
     partner = await db.partners.find_one({"_id": object_id})
     if not partner:
         raise HTTPException(
@@ -1598,7 +1651,7 @@ async def delete_partner(
             status_code=400,
             detail="ID partner tidak valid. ID harus berupa 24 karakter hex string."
         )
-        
+
     result = await db.partners.delete_one({"_id": object_id})
     if result.deleted_count == 0:
         raise HTTPException(
@@ -1962,7 +2015,7 @@ app = FastAPI(
     version="1.0.0",
     openapi_tags=[
         {
-            "name": "authentication", 
+            "name": "authentication",
             "description": "Operasi terkait autentikasi pengguna"
         },
         {
@@ -2127,285 +2180,251 @@ app.add_middleware(
 )
 ```
 
-## FINAL CHECKLIST
+### Langkah 3: Best Practices
 
-### Security Checklist:
+1. Desain Payload
 
-- [ ] Authentication working
-- [ ] Password hashing implemented
-- [ ] JWT token secure
-- [ ] CORS configured
-- [ ] Rate limiting active
-- [ ] File upload validation
-- [ ] Error handling complete
+   - Jaga payload tetap kecil dan fokus
+   - Sertakan hanya data yang diperlukan
+   - Pertahankan struktur yang konsisten
+   - Versikan payload webhook Anda
 
-### Functionality Checklist:
+2. Penanganan Kesalahan
 
-- [ ] All CRUD operations working
-- [ ] File uploads functioning
-- [ ] Database connections stable
-- [ ] Endpoints documented
-- [ ] Testing complete
-- [ ] Seeder working
+   - Terapkan mekanisme percobaan ulang
+   - Catat pengiriman yang gagal
+   - Pantau kesehatan webhook
+   - Beri peringatan pada kegagalan berulang
 
-### Deployment Checklist:
+3. Kinerja
 
-- [ ] Environment variables set
-- [ ] Docker configuration complete
-- [ ] Database backup strategy
-- [ ] Monitoring setup
-- [ ] Logging configured
-- [ ] SSL/TLS ready
+   - Pemrosesan webhook secara asinkron
+   - Kelompokkan event yang serupa
+   - Terapkan pembatasan rate
+   - Gunakan antrian webhook
 
-## MAINTENANCE TIPS
+4. Pemantauan
+   - Lacak tingkat keberhasilan pengiriman
+   - Pantau waktu respons
+   - Beri peringatan pada tingkat kegagalan tinggi
+   - Catat informasi kesalahan secara detail
 
-1. Regular Maintenance:
+## TAHAP 9: UNIT TESTING
 
-   - Monitor error logs
-   - Check database performance
-   - Update dependencies
-   - Backup database regularly
+### Langkah 1: Setup Testing Environment
 
-2. Scaling Considerations:
+1. Install dependencies untuk testing:
 
-   - Monitor API usage
-   - Optimize database queries
-   - Consider caching
-   - Load balancing setup
-
-3. Security Updates:
-
-   - Regular security audits
-   - Update dependencies
-   - Monitor for vulnerabilities
-   - Keep backups secure
-
-4. Feature Additions
-   - User roles
-   - API versioning
-   - Webhook support
-
-## Webhook Support
-
-### Webhook Configuration
-
-```javascript
-{
-  _id: ObjectId,
-  url: String,           // Required, webhook destination URL
-  event_type: String,    // Required, event to listen for
-  is_active: Boolean,    // Default: true
-  secret_key: String,    // Optional, for webhook signature
-  created_at: DateTime   // Auto-generated
-}
+```bash
+pip install pytest pytest-asyncio httpx pytest-cov
 ```
 
-### Supported Events
+2. Buat file konfigurasi pytest.ini:
 
-1. Content Updates
+```ini
+[pytest]
+asyncio_mode = auto
+asyncio_default_fixture_loop_scope = function
+log_cli = true
+log_cli_level = INFO
+log_cli_format = %(asctime)s [%(levelname)8s] %(message)s (%(filename)s:%(lineno)s)
+log_cli_date_format = %Y-%m-%d %H:%M:%S
+filterwarnings =
+    ignore::DeprecationWarning
+    ignore::UserWarning
+```
 
-   - program.created
-   - program.updated
-   - program.deleted
-   - blog.created
-   - blog.updated
-   - blog.deleted
+### Langkah 2: Setup Test Fixtures (conftest.py)
 
-2. User Events
-
-   - user.registered
-   - user.login
-   - user.status_changed
-
-3. System Events
-   - system.backup_completed
-   - system.error_occurred
-
-### Webhook Security
-
-1. Signature Verification
+1. Buat fixtures untuk database dan client testing:
 
 ```python
-def generate_webhook_signature(payload: dict, secret: str) -> str:
-    return hmac.new(
-        secret.encode(),
-        json.dumps(payload).encode(),
-        hashlib.sha256
-    ).hexdigest()
+@pytest.fixture(scope="session", autouse=True)
+def set_test_db():
+    """Set test database."""
+    settings.MONGODB_DATABASE = settings.MONGODB_TEST_DB
+    return settings
+
+@pytest.fixture(scope="session")
+def event_loop():
+    """Create an instance of the default event loop for each test case."""
+    policy = asyncio.get_event_loop_policy()
+    loop = policy.new_event_loop()
+    yield loop
+    loop.close()
+
+@pytest_asyncio.fixture(scope="function")
+async def db_client(event_loop):
+    """Create database client."""
+    client = AsyncIOMotorClient(settings.MONGODB_URL)
+    db = client[settings.MONGODB_TEST_DB]
+
+    # Bersihkan koleksi sebelum test
+    try:
+        collections = await db.list_collection_names()
+        for collection in collections:
+            await db[collection].delete_many({})
+            logger.info(f"Cleaned collection: {collection}")
+    except Exception as e:
+        logger.error(f"Error cleaning collections before test: {e}")
+
+    app.state.db = db
+    yield db
+
+    # Bersihkan koleksi setelah test
+    try:
+        collections = await db.list_collection_names()
+        for collection in collections:
+            await db[collection].delete_many({})
+            logger.info(f"Cleaned collection after test: {collection}")
+    except Exception as e:
+        logger.error(f"Error cleaning collections after test: {e}")
+
+    client.close()
 ```
 
-2. Retry Mechanism
+### Langkah 3: Implementasi Test Cases
+
+1. Test Authentication (test_auth.py):
 
 ```python
-WEBHOOK_RETRY_ATTEMPTS = 3
-WEBHOOK_RETRY_DELAY = 60  # seconds
+@pytest.mark.asyncio
+async def test_register_success(async_client: AsyncClient, db_client):
+    """Test registrasi berhasil"""
+    user_data = {
+        "email": "test@example.com",
+        "username": "testuser",
+        "password": "testpassword123"
+    }
+    response = await async_client.post("/auth/register", json=user_data)
+    assert response.status_code == 201
 ```
 
-3. Security Best Practices
-   - HTTPS Only
-   - Signature Verification
-   - Rate Limiting
-   - Timeout Configuration
-   - IP Whitelisting
-
-### Example Webhook Payload
-
-```javascript
-{
-  "event_type": "program.created",
-  "timestamp": "2024-01-10T12:00:00Z",
-  "data": {
-    "program_id": "123",
-    "title": "New Program",
-    "description": "Program Description"
-  },
-  "signature": "sha256_hash_signature"
-}
-```
-
-### Webhook Management API
-
-1. Register Webhook
-
-```http
-POST /api/webhooks
-Content-Type: application/json
-
-{
-  "url": "https://example.com/webhook",
-  "event_type": "program.created",
-  "secret_key": "optional_secret"
-}
-```
-
-2. List Webhooks
-
-```http
-GET /api/webhooks
-```
-
-3. Update Webhook
-
-```http
-PUT /api/webhooks/{webhook_id}
-```
-
-4. Delete Webhook
-
-```http
-DELETE /api/webhooks/{webhook_id}
-```
-
-### Webhook Implementation
+2. Test Blog (test_blog.py):
 
 ```python
-async def trigger_webhook(event_type: str, payload: dict):
-    webhooks = await db.webhooks.find({
-        "event_type": event_type,
-        "is_active": True
-    }).to_list(None)
+@pytest.mark.asyncio
+async def test_create_blog(async_client: AsyncClient):
+    """Test membuat blog baru"""
+    # Login untuk mendapatkan token
+    response = await async_client.post("/auth/login", data=login_data)
+    token = response.json()["access_token"]
 
-    for webhook in webhooks:
-        try:
-            if webhook.get("secret_key"):
-                signature = generate_webhook_signature(
-                    payload,
-                    webhook["secret_key"]
-                )
-                headers = {"X-Webhook-Signature": signature}
-            else:
-                headers = {}
-
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    webhook["url"],
-                    json=payload,
-                    headers=headers
-                ) as response:
-                    if response.status >= 400:
-                        # Handle failed delivery
-                        await log_webhook_failure(webhook, payload, response)
-
-        except Exception as e:
-            # Log error and schedule retry
-            await schedule_webhook_retry(webhook, payload)
+    # Buat blog dengan gambar
+    files = {
+        "image": ("test.jpg", image_content, "image/jpeg"),
+        "title": (None, "Test Blog"),
+        "content": (None, "Test content")
+    }
+    response = await async_client.post("/blogs", files=files, headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
 ```
 
-### Best Practices
+3. Test Gallery (test_gallery.py):
 
-1. Payload Design
+```python
+@pytest.mark.asyncio
+async def test_create_gallery(async_client: AsyncClient):
+    """Test menambahkan foto ke galeri"""
+    # Setup dan login
+    files = {
+        "image": ("test.jpg", image_content, "image/jpeg"),
+        "title": (None, "Test Gallery"),
+        "description": (None, "Test description")
+    }
+    response = await async_client.post("/gallery", files=files, headers=headers)
+    assert response.status_code == 200
+```
 
-   - Keep payloads small and focused
-   - Include only necessary data
-   - Maintain consistent structure
-   - Version your webhook payloads
+4. Test Partners (test_partners.py):
 
-2. Error Handling
+```python
+@pytest.mark.asyncio
+async def test_create_partner(async_client: AsyncClient):
+    """Test menambahkan partner baru"""
+    files = {
+        "logo": ("test.jpg", logo_content, "image/jpeg"),
+        "name": (None, "Test Partner"),
+        "description": (None, "Test description"),
+        "website_url": (None, "https://www.example.com/")
+    }
+    response = await async_client.post("/partners", files=files, headers=headers)
+    assert response.status_code == 200
+```
 
-   - Implement retry mechanism
-   - Log failed deliveries
-   - Monitor webhook health
-   - Alert on repeated failures
+5. Test Programs (test_programs.py):
 
-3. Performance
+```python
+@pytest.mark.asyncio
+async def test_create_program(async_client: AsyncClient):
+    """Test membuat program baru"""
+    files = {
+        "image": ("test.jpg", image_content, "image/jpeg"),
+        "title": (None, "Test Program"),
+        "description": (None, "Test description"),
+        "program_type": (None, "workshop"),
+        "start_date": (None, start_date.isoformat()),
+        "end_date": (None, end_date.isoformat())
+    }
+    response = await async_client.post("/programs", files=files, headers=headers)
+    assert response.status_code == 200
+```
 
-   - Async webhook processing
-   - Batch similar events
-   - Implement rate limiting
-   - Use webhook queues
+### Langkah 4: Menjalankan Tests
 
-4. Monitoring
-   - Track delivery success rates
-   - Monitor response times
-   - Alert on high failure rates
-   - Log detailed error information
-
-### Langkah 5: Menjalankan Server
-
-1. Pastikan berada di root folder project (backend)
-
-2. Aktifkan virtual environment:
-
-- Windows:
+1. Jalankan semua test:
 
 ```bash
-venv\Scripts\activate
+pytest app/tests/ -v
 ```
 
-- Linux/Mac:
+2. Jalankan test spesifik:
 
 ```bash
-source venv/bin/activate
+pytest app/tests/test_auth.py -v
 ```
 
-3. Jalankan server dalam mode development:
+3. Jalankan test dengan coverage:
 
 ```bash
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+pytest --cov=app app/tests/
 ```
 
-Penjelasan command:
+### Fitur Testing yang Diimplementasikan:
 
-- `app.main`: Path ke file main.py (dalam folder app)
-- `app`: Instance FastAPI di main.py
-- `--reload`: Auto reload saat ada perubahan kode
-- `--host 0.0.0.0`: Bisa diakses dari luar
-- `--port 8000`: Port yang digunakan
+1. **Database Testing**:
 
-4. Akses API melalui browser:
+   - Menggunakan database terpisah untuk testing
+   - Membersihkan database sebelum dan sesudah setiap test
+   - Penanganan koneksi database yang aman
 
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
+2. **Authentication Testing**:
 
-5. Untuk mode production:
+   - Test registrasi user
+   - Test login dengan kredensial valid
+   - Test login dengan kredensial invalid
+   - Test duplikasi email dan username
 
-```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
-```
+3. **CRUD Testing**:
 
-Penjelasan tambahan:
+   - Create: Test pembuatan data baru
+   - Read: Test pengambilan data
+   - Delete: Test penghapusan data
+   - Validasi response status dan content
 
-- Hilangkan flag `--reload` di production
-- Tambahkan `--workers` sesuai jumlah CPU
-- Gunakan process manager seperti Supervisor
-- Pastikan sudah setup HTTPS/SSL
+4. **File Upload Testing**:
+
+   - Test upload gambar
+   - Validasi format file
+   - Penanganan file storage
+
+5. **Error Handling**:
+
+   - Test case untuk error cases
+   - Validasi pesan error
+   - Penanganan exception
+
+6. **Security Testing**:
+   - Test autentikasi token
+   - Test akses unauthorized
+   - Validasi permission
