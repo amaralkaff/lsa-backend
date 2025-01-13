@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException, Depends, Form, UploadFile, File, Query
-from app.models.schemas import ProgramBase, ProgramResponse
+from fastapi import APIRouter, HTTPException, Depends, Form, UploadFile, File, Query, status
+from fastapi.responses import JSONResponse
+from app.models.schemas import ProgramBase, ProgramResponse, ResponseEnvelope
 from app.core.database import get_database
 from app.api.deps import get_current_active_user
 from app.utils.file_handler import save_upload_file
-from typing import List, Literal, Union, Optional
+from typing import List, Literal, Union, Optional, Dict, Any
 from datetime import datetime
 from bson import ObjectId
 from bson.errors import InvalidId
@@ -14,12 +15,20 @@ class ProgramType(str, Enum):
     HUMAN_LIBRARY = "human_library"
     WORKSHOP = "workshop"
     SOSIALISASI = "sosialisasi"
+    SEMINAR = "seminar"
+    TRAINING = "training"
 
 router = APIRouter(tags=["programs"])
 
+def convert_objectid(doc: Dict[str, Any]) -> Dict[str, Any]:
+    if doc and "_id" in doc:
+        doc["_id"] = str(doc["_id"])
+    return doc
+
 @router.post(
     "", 
-    response_model=ProgramResponse,
+    response_model=ResponseEnvelope,
+    status_code=status.HTTP_201_CREATED,
     summary="Membuat Program Baru",
     description="""
     Membuat program baru dengan gambar.
@@ -36,14 +45,16 @@ router = APIRouter(tags=["programs"])
     - human_library: Program Human Library
     - workshop: Program Workshop
     - sosialisasi: Program Sosialisasi
+    - seminar: Program Seminar
+    - training: Program Training
     """
 )
 async def create_program(
-    title: str = Form(..., description="Judul program", example="Workshop Pemulihan Mental"),
-    description: str = Form(..., description="Deskripsi program", example="Workshop untuk pemulihan kesehatan mental..."),
+    title: str = Form(..., description="Judul program", examples=["Workshop Pemulihan Mental"]),
+    description: str = Form(..., description="Deskripsi program", examples=["Workshop untuk pemulihan kesehatan mental..."]),
     program_type: ProgramType = Form(
         ..., 
-        description="Tipe program (human_library, workshop, sosialisasi)",
+        description="Tipe program (human_library, workshop, sosialisasi, seminar, training)",
         exclude=["ALL"]
     ),
     image: UploadFile = File(
@@ -51,14 +62,14 @@ async def create_program(
         description="File gambar untuk program (JPG, PNG, GIF, max 5MB)",
         media_type="image/*"
     ),
-    start_date: datetime = Form(..., description="Tanggal mulai program", example="2024-01-01T00:00:00"),
-    end_date: datetime = Form(..., description="Tanggal selesai program", example="2024-01-02T00:00:00"),
+    start_date: datetime = Form(..., description="Tanggal mulai program", examples=["2024-01-01T00:00:00"]),
+    end_date: datetime = Form(..., description="Tanggal selesai program", examples=["2024-01-02T00:00:00"]),
     db=Depends(get_database),
     current_user=Depends(get_current_active_user)
 ):
     # Upload gambar
     image_url = await save_upload_file(image)
-    
+
     program_data = {
         "title": title,
         "description": description,
@@ -66,8 +77,9 @@ async def create_program(
         "image": image_url,
         "start_date": start_date,
         "end_date": end_date,
-        "created_at": datetime.utcnow(),
-        "author": current_user["email"]
+        "is_active": True,
+        "author": current_user["email"],
+        "created_at": datetime.utcnow()
     }
     
     # Validate program data using ProgramBase
@@ -75,11 +87,17 @@ async def create_program(
     
     result = await db.programs.insert_one(program.model_dump())
     created_program = await db.programs.find_one({"_id": result.inserted_id})
-    return created_program
+    created_program = convert_objectid(created_program)
+    
+    return ResponseEnvelope(
+        status="success",
+        message="Program berhasil dibuat",
+        data=created_program
+    )
 
 @router.get(
     "", 
-    response_model=List[ProgramResponse],
+    response_model=ResponseEnvelope,
     summary="Mengambil Semua Program",
     description="""
     Mengambil daftar program yang tersedia.
@@ -89,6 +107,8 @@ async def create_program(
     - human_library: Hanya program human library
     - workshop: Hanya program workshop
     - sosialisasi: Hanya program sosialisasi
+    - seminar: Hanya program seminar
+    - training: Hanya program training
     """
 )
 async def get_programs(
@@ -103,11 +123,17 @@ async def get_programs(
         query["program_type"] = program_type.value
         
     programs = await db.programs.find(query).to_list(1000)
-    return programs
+    programs = [convert_objectid(program) for program in programs]
+    
+    return ResponseEnvelope(
+        status="success",
+        message="Daftar program berhasil diambil",
+        data=programs
+    )
 
 @router.get(
     "/{program_id}", 
-    response_model=ProgramResponse,
+    response_model=ResponseEnvelope,
     summary="Mengambil Detail Program",
     description="Mengambil detail program berdasarkan ID."
 )
@@ -115,21 +141,38 @@ async def get_program(program_id: str, db=Depends(get_database)):
     try:
         object_id = ObjectId(program_id)
     except InvalidId:
-        raise HTTPException(
-            status_code=400,
-            detail="ID program tidak valid. ID harus berupa 24 karakter hex string."
+        error_response = ResponseEnvelope(
+            status="error",
+            message="ID program tidak valid. ID harus berupa 24 karakter hex string.",
+            data=None
+        )
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content=error_response.model_dump()
         )
     
     program = await db.programs.find_one({"_id": object_id})
     if not program:
-        raise HTTPException(
-            status_code=404,
-            detail="Program tidak ditemukan"
+        error_response = ResponseEnvelope(
+            status="error",
+            message="Program tidak ditemukan",
+            data=None
         )
-    return program
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content=error_response.model_dump()
+        )
+    
+    program = convert_objectid(program)
+    return ResponseEnvelope(
+        status="success",
+        message="Detail program berhasil diambil",
+        data=program
+    )
 
 @router.delete(
     "/{program_id}",
+    response_model=ResponseEnvelope,
     summary="Menghapus Program",
     description="Menghapus program berdasarkan ID."
 )
@@ -141,15 +184,30 @@ async def delete_program(
     try:
         object_id = ObjectId(program_id)
     except InvalidId:
-        raise HTTPException(
-            status_code=400,
-            detail="ID program tidak valid. ID harus berupa 24 karakter hex string."
+        error_response = ResponseEnvelope(
+            status="error",
+            message="ID program tidak valid. ID harus berupa 24 karakter hex string.",
+            data=None
+        )
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content=error_response.model_dump()
         )
     
     result = await db.programs.delete_one({"_id": object_id})
     if result.deleted_count == 0:
-        raise HTTPException(
-            status_code=404,
-            detail="Program tidak ditemukan"
+        error_response = ResponseEnvelope(
+            status="error",
+            message="Program tidak ditemukan",
+            data=None
         )
-    return {"message": "Program berhasil dihapus"}
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content=error_response.model_dump()
+        )
+    
+    return ResponseEnvelope(
+        status="success",
+        message="Program berhasil dihapus",
+        data=None
+    )

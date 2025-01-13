@@ -11,7 +11,7 @@ async def seed_all():
     try:
         # Ambil konfigurasi dan bersihkan dari komentar
         MONGODB_URL = config("MONGODB_URL").split('#')[0].strip() # type: ignore
-        DATABASE_NAME = config("DATABASE_NAME").split('#')[0].strip() # type: ignore
+        DATABASE_NAME = config("MONGODB_DATABASE").split('#')[0].strip() # type: ignore
         
         print(f"Database name: '{DATABASE_NAME}'")  # Debug line dengan quotes
         

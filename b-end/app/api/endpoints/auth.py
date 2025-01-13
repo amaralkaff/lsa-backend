@@ -1,82 +1,108 @@
-from fastapi import APIRouter, HTTPException, Depends, Form
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from app.models.schemas import UserResponse, Token, UserRegister
+from fastapi import APIRouter, HTTPException, Depends, status
+from app.models.schemas import UserCreate, UserLogin, ResponseEnvelope, Token
+from app.core.security import create_access_token, verify_password, get_password_hash
 from app.core.database import get_database
-from datetime import datetime, timedelta
-from passlib.context import CryptContext
-from jose import jwt
 from app.core.config import settings
+from datetime import timedelta
+from fastapi.responses import JSONResponse
 
 router = APIRouter()
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 
-def create_access_token(data: dict):
-    to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
-    return encoded_jwt
+@router.post("/register", response_model=ResponseEnvelope, status_code=201)
+async def register(user: UserCreate, db=Depends(get_database)):
+    # Cek apakah email sudah terdaftar
+    existing_user = await db.users.find_one({"email": user.email})
+    if existing_user:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={
+                "status": "error",
+                "message": "Email already registered",
+                "data": None,
+                "meta": None
+            }
+        )
 
-@router.post(
-    "/register", 
-    response_model=UserResponse,
-    status_code=201,
-    summary="Register User Baru",
-    description="Mendaftarkan user baru dengan email, username, dan password"
-)
-async def register(
-    user: UserRegister,
-    db=Depends(get_database)
-):
-    # Check if user exists
-    if await db.users.find_one({"email": user.email}):
-        raise HTTPException(status_code=400, detail="Email sudah terdaftar")
-    
-    if await db.users.find_one({"username": user.username}):
-        raise HTTPException(status_code=400, detail="Username sudah digunakan")
-    
+    # Cek apakah username sudah digunakan
+    existing_username = await db.users.find_one({"username": user.username})
+    if existing_username:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={
+                "status": "error",
+                "message": "Username already taken",
+                "data": None,
+                "meta": None
+            }
+        )
+
     # Hash password
-    hashed_password = pwd_context.hash(user.password)
+    hashed_password = get_password_hash(user.password)
     
-    # Prepare user data
+    # Simpan user baru
     user_data = {
         "email": user.email,
         "username": user.username,
+        "full_name": user.full_name,
         "password": hashed_password,
-        "is_active": True,
-        "is_admin": False,
-        "created_at": datetime.utcnow()
+        "is_active": True
     }
     
-    # Insert user
     result = await db.users.insert_one(user_data)
     
-    # Get created user
-    created_user = await db.users.find_one({"_id": result.inserted_id})
-    return created_user
-
-@router.post(
-    "/login", 
-    response_model=Token,
-    summary="Login User",
-    description="Login user dengan email dan password untuk mendapatkan access token"
-)
-async def login(
-    form_data: OAuth2PasswordRequestForm = Depends(), 
-    db=Depends(get_database)
-):
-    user = await db.users.find_one({"email": form_data.username})
-    if not user:
-        raise HTTPException(status_code=400, detail="Email atau password salah")
+    # Return user data tanpa password
+    user_response = {
+        "email": user.email,
+        "username": user.username,
+        "full_name": user.full_name,
+        "is_active": True,
+        "id": str(result.inserted_id)
+    }
     
-    if not pwd_context.verify(form_data.password, user["password"]):
-        raise HTTPException(status_code=400, detail="Email atau password salah")
-    
-    if not user.get("is_active", False):
-        raise HTTPException(status_code=400, detail="Akun tidak aktif")
-    
-    access_token = create_access_token(
-        data={"sub": user["email"], "is_admin": user.get("is_admin", False)}
+    return ResponseEnvelope(
+        status="success",
+        message="User registered successfully",
+        data=user_response,
+        meta=None
     )
-    return {"access_token": access_token, "token_type": "bearer"} 
+
+@router.post("/login", response_model=ResponseEnvelope)
+async def login(user: UserLogin, db=Depends(get_database)):
+    # Cari user berdasarkan email
+    db_user = await db.users.find_one({"email": user.email})
+    if not db_user:
+        return JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            content={
+                "status": "error",
+                "message": "User not found",
+                "data": None,
+                "meta": None
+            }
+        )
+
+    # Verifikasi password
+    if not verify_password(user.password, db_user["password"]):
+        return JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            content={
+                "status": "error",
+                "message": "Incorrect password",
+                "data": None,
+                "meta": None
+            }
+        )
+
+    # Generate access token
+    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": db_user["email"]},
+        expires_delta=access_token_expires
+    )
+
+    return ResponseEnvelope(
+        status="success",
+        message="Login successful",
+        data={"access_token": access_token, "token_type": "bearer"},
+        meta=None
+    ) 

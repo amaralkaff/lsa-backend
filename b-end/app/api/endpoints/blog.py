@@ -1,149 +1,178 @@
-from fastapi import APIRouter, HTTPException, Depends, Form, UploadFile, File, Query
-from app.models.schemas import BlogResponse, ResponseEnvelope
-from app.core.database import get_database
-from app.api.deps import get_current_active_user
-from app.utils.file_handler import save_upload_file
-from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException, status, Response, Form, UploadFile, File
+from fastapi.responses import JSONResponse
+from typing import List, Dict, Any
+from bson import ObjectId
 from datetime import datetime
-import logging
 
-router = APIRouter(tags=["blogs"])
-logger = logging.getLogger(__name__)
+from app.core.database import get_database
+from app.models.schemas import BlogBase, BlogResponse, ResponseEnvelope
+from app.api.deps import get_current_user
+from app.utils.file_handler import save_upload_file
 
-@router.post(
-    "", 
-    response_model=BlogResponse,
-    summary="Membuat Blog Baru",
-    description="""
-    Membuat blog baru dengan gambar.
-    
-    **Format Gambar yang Didukung:**
-    - JPG/JPEG
-    - PNG
-    - GIF
-    
-    **Batasan:**
-    - Ukuran maksimal file: 5MB
-    """
-)
+router = APIRouter()
+
+def convert_objectid(doc: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert ObjectId to string in document"""
+    if doc and "_id" in doc:
+        doc["_id"] = str(doc["_id"])
+    return doc
+
+@router.post("", response_model=ResponseEnvelope[BlogResponse], status_code=status.HTTP_201_CREATED)
 async def create_blog(
-    title: str = Form(..., description="Judul blog yang akan dibuat", example="Tutorial Python"),
-    content: str = Form(..., description="Konten atau isi blog", example="Python adalah bahasa pemrograman yang mudah dipelajari..."),
-    image: UploadFile = File(
-        ..., 
-        description="File gambar untuk blog (JPG, PNG, GIF, max 5MB)",
-        media_type="image/*"
-    ),
-    db=Depends(get_database),
-    current_user=Depends(get_current_active_user)
-):
-    """
-    Membuat blog baru dengan gambar.
-    
-    Parameters:
-    - **title**: Judul blog
-    - **content**: Konten blog
-    - **image**: File gambar (max 5MB, format: JPG/PNG/GIF)
-    
-    Returns:
-    - Blog yang berhasil dibuat
-    """
-    # Upload gambar
-    image_url = await save_upload_file(image)
-    
-    blog_data = {
-        "title": title,
-        "content": content,
-        "image": image_url,
-        "created_at": datetime.utcnow(),
-        "author": current_user["email"]
-    }
-    
-    result = await db.blogs.insert_one(blog_data)
-    created_blog = await db.blogs.find_one({"_id": result.inserted_id})
-    return created_blog
-
-@router.get("", response_model=ResponseEnvelope)
-async def get_blogs(
-    skip: int = Query(default=0, ge=0, description="Skip n items"),
-    limit: int = Query(default=10, ge=1, le=100, description="Limit the number of items"),
-    search: Optional[str] = Query(None, description="Search in title and content"),
+    title: str = Form(...),
+    content: str = Form(...),
+    image: UploadFile = File(...),
+    current_user = Depends(get_current_user),
     db = Depends(get_database)
 ):
+    """Create a new blog"""
     try:
-        logger.info(f"Fetching blogs with skip={skip}, limit={limit}, search={search}")
+        # Save image if provided
+        image_path = await save_upload_file(image)
+            
+        blog_data = {
+            "title": title,
+            "content": content,
+            "image": image_path,
+            "author": current_user["email"],
+            "created_at": datetime.utcnow()
+        }
         
-        # Build query
-        query = {}
-        if search:
-            query["$or"] = [
-                {"title": {"$regex": search, "$options": "i"}},
-                {"content": {"$regex": search, "$options": "i"}}
-            ]
+        result = await db["blogs"].insert_one(blog_data)
         
-        # Get total count
-        total_count = await db.blogs.count_documents(query)
+        # Get created blog
+        created_blog = await db["blogs"].find_one({"_id": result.inserted_id})
+        created_blog = convert_objectid(created_blog)
         
-        # Get paginated results
-        blogs = await db.blogs.find(query).skip(skip).limit(limit).to_list(limit)
+        return ResponseEnvelope[BlogResponse](
+            status="success",
+            message="Blog berhasil dibuat",
+            data=created_blog
+        )
         
-        # Convert ObjectId to string
-        for blog in blogs:
-            blog["_id"] = str(blog["_id"])
+    except Exception as e:
+        error_response = ResponseEnvelope(
+            status="error",
+            message=str(e)
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=error_response.model_dump()
+        )
+
+@router.get("", response_model=ResponseEnvelope[List[BlogResponse]])
+async def get_blogs(db = Depends(get_database)):
+    """Get all blogs"""
+    try:
+        blogs = await db["blogs"].find().to_list(None)
+        blogs = [convert_objectid(blog) for blog in blogs]
         
+        return ResponseEnvelope[List[BlogResponse]](
+            status="success",
+            message="Daftar blog berhasil diambil",
+            data=blogs
+        )
+        
+    except Exception as e:
+        error_response = ResponseEnvelope(
+            status="error",
+            message=str(e)
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=error_response.model_dump()
+        )
+
+@router.get("/{blog_id}", response_model=ResponseEnvelope[BlogResponse])
+async def get_blog(blog_id: str, db = Depends(get_database)):
+    """Get a blog by ID"""
+    try:
+        if not ObjectId.is_valid(blog_id):
+            error_response = ResponseEnvelope(
+                status="error",
+                message="ID blog tidak valid"
+            )
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content=error_response.model_dump()
+            )
+            
+        blog = await db["blogs"].find_one({"_id": ObjectId(blog_id)})
+        if not blog:
+            error_response = ResponseEnvelope(
+                status="error",
+                message="Blog tidak ditemukan"
+            )
+            return JSONResponse(
+                status_code=status.HTTP_404_NOT_FOUND,
+                content=error_response.model_dump()
+            )
+            
+        blog = convert_objectid(blog)
+        return ResponseEnvelope[BlogResponse](
+            status="success",
+            message="Detail blog berhasil diambil",
+            data=blog
+        )
+        
+    except Exception as e:
+        error_response = ResponseEnvelope(
+            status="error",
+            message=str(e)
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=error_response.model_dump()
+        )
+
+@router.delete("/{blog_id}", response_model=ResponseEnvelope)
+async def delete_blog(blog_id: str, current_user = Depends(get_current_user), db = Depends(get_database)):
+    """Delete a blog"""
+    try:
+        if not ObjectId.is_valid(blog_id):
+            error_response = ResponseEnvelope(
+                status="error",
+                message="ID blog tidak valid"
+            )
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content=error_response.model_dump()
+            )
+            
+        blog = await db["blogs"].find_one({"_id": ObjectId(blog_id)})
+        if not blog:
+            error_response = ResponseEnvelope(
+                status="error",
+                message="Blog tidak ditemukan"
+            )
+            return JSONResponse(
+                status_code=status.HTTP_404_NOT_FOUND,
+                content=error_response.model_dump()
+            )
+            
+        # Check if user is author
+        if blog["author"] != current_user["email"]:
+            error_response = ResponseEnvelope(
+                status="error",
+                message="Anda tidak memiliki akses untuk menghapus blog ini"
+            )
+            return JSONResponse(
+                status_code=status.HTTP_403_FORBIDDEN,
+                content=error_response.model_dump()
+            )
+            
+        await db["blogs"].delete_one({"_id": ObjectId(blog_id)})
         return ResponseEnvelope(
             status="success",
-            message="Blog berhasil diambil",
-            data=blogs,
-            meta={
-                "total": total_count,
-                "skip": skip,
-                "limit": limit,
-                "has_more": (skip + limit) < total_count
-            }
+            message="Blog berhasil dihapus"
         )
+        
     except Exception as e:
-        logger.error(f"Error fetching blogs: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/{blog_id}", response_model=BlogResponse)
-async def get_blog(blog_id: str, db=Depends(get_database)):
-    from bson import ObjectId
-    try:
-        object_id = ObjectId(blog_id)
-    except:
-        raise HTTPException(
-            status_code=400,
-            detail="ID blog tidak valid. ID harus berupa 24 karakter hex string."
+        error_response = ResponseEnvelope(
+            status="error",
+            message=str(e)
         )
-        
-    blog = await db.blogs.find_one({"_id": object_id})
-    if not blog:
         raise HTTPException(
-            status_code=404,
-            detail="Blog tidak ditemukan"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=error_response.model_dump()
         )
-    return blog
-
-@router.delete("/{blog_id}")
-async def delete_blog(
-    blog_id: str,
-    db=Depends(get_database),
-    current_user=Depends(get_current_active_user)
-):
-    from bson import ObjectId
-    try:
-        object_id = ObjectId(blog_id)
-    except:
-        raise HTTPException(
-            status_code=400,
-            detail="ID blog tidak valid. ID harus berupa 24 karakter hex string."
-        )
-        
-    result = await db.blogs.delete_one({"_id": object_id})
-    if result.deleted_count == 0:
-        raise HTTPException(
-            status_code=404,
-            detail="Blog tidak ditemukan"
-        )
-    return {"message": "Blog berhasil dihapus"}

@@ -175,7 +175,7 @@ backend/
 
 ### 2. Folder `app/`
 
-- Folder inti yang berisi seluruh logika aplikasi 
+- Folder inti yang berisi seluruh logika aplikasi
 - Mengorganisir kode menjadi beberapa modul terpisah
 - Menerapkan prinsip modular dan clean architecture
 
@@ -218,8 +218,7 @@ backend/
 - Membaca variabel environment dari .env
 - Konfigurasi logging dan error handling
 
-
-### 
+###
 
 ### Langkah 1: Setup Database Connection
 

@@ -16,16 +16,8 @@ def set_test_db():
     settings.MONGODB_DATABASE = settings.MONGODB_TEST_DB
     return settings
 
-@pytest.fixture(scope="session")
-def event_loop():
-    """Create an instance of the default event loop for each test case."""
-    policy = asyncio.get_event_loop_policy()
-    loop = policy.new_event_loop()
-    yield loop
-    loop.close()
-
 @pytest_asyncio.fixture(scope="function")
-async def db_client(event_loop):
+async def db_client():
     """Create database client."""
     client = AsyncIOMotorClient(settings.MONGODB_URL)
     db = client[settings.MONGODB_TEST_DB]
