@@ -1,4 +1,4 @@
-# Panduan Lengkap Implementasi Backend FastAPI
+# Panduan Lengkap Implementasi Backend FastAPI dan MongoDB
 
 ## TAHAP 1: SETUP PROJECT & ENVIRONMENT
 
@@ -7,14 +7,15 @@
 1. Buat folder project baru
 
 ```bash
-mkdir backend
-cd backend
+mkdir backend # Membuat folder backend (mkdir = make directory)
+cd backend # Masuk ke folder backend (cd = change directory)
+touch .env # Membuat file .env (touch = create file)
 ```
 
 2. Buat virtual environment
 
 ```bash
-python -m venv venv
+python -m venv venv # Membuat virtual environment (python -m venv = python module virtual environment)
 ```
 
 3. Aktifkan virtual environment
@@ -22,13 +23,13 @@ python -m venv venv
 - Windows:
 
 ```bash
-venv\Scripts\activate
+venv\Scripts\activate # Aktifkan virtual environment (venv\Scripts\activate = virtual environment script)
 ```
 
 - Linux/Mac:
 
 ```bash
-source venv/bin/activate
+source venv/bin/activate # Aktifkan virtual environment (source venv/bin/activate = virtual environment script)
 ```
 
 ### Langkah 2: Install Dependencies
@@ -42,7 +43,7 @@ pip install fastapi uvicorn motor pydantic python-jose[cryptography] passlib[bcr
 2. Buat requirements.txt
 
 ```bash
-pip freeze > requirements.txt
+pip freeze > requirements.txt # Membuat requirements.txt (pip freeze = pip module freeze)
 ```
 
 ### Langkah 3: Penjelasan package utama
@@ -671,7 +672,7 @@ Catatan:
 - Semua data memiliki timestamp created_at
 - Koneksi database ditutup setelah selesai
 
-## TAHAP 3: IMPLEMENTASI AUTHENTICATION
+## TAHAP 2: IMPLEMENTASI AUTHENTICATION
 
 ### Langkah 1: Setup Dependencies (deps.py)
 
@@ -765,12 +766,12 @@ async def register(user: UserRegister, db=Depends(get_database)):
 
     # Siapkan data user
     user_data = {
-        "email": user.email,
-        "username": user.username,
-        "password": hashed_password,
-        "is_active": True,  # User aktif by default
-        "is_admin": False,  # Bukan admin by default
-        "created_at": datetime.utcnow()  # Timestamp pembuatan
+        "email": user.email, # Email user
+        "username": user.username, # Username user
+        "password": hashed_password, # Password user
+        "is_active": True, # User aktif by default
+        "is_admin": False, # Bukan admin by default
+        "created_at": datetime.utcnow() # Timestamp pembuatan
     }
 
     # Insert user ke database
@@ -832,65 +833,82 @@ Keamanan:
 
 ```python
 # Import library yang diperlukan
-from fastapi import APIRouter, HTTPException, Depends  # Untuk routing dan error handling
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm  # Untuk implementasi OAuth2
-from app.models.schemas import UserRegister, UserResponse, UserLogin, Token  # Model data untuk user
-from app.core.database import get_database  # Koneksi database
-from datetime import datetime, timedelta  # Untuk handling waktu dan expiry token
-from passlib.context import CryptContext  # Untuk hashing password
-from jose import jwt  # Untuk JWT encoding/decoding
-from decouple import config  # Untuk mengambil environment variables
+from fastapi import APIRouter, HTTPException, Depends, Form # Untuk routing dan error handling
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm # Untuk implementasi OAuth2
+from app.models.schemas import UserResponse, Token # Model data untuk user
+from app.core.database import get_database # Koneksi database
+from datetime import datetime, timedelta # Untuk handling waktu dan expiry token
+from passlib.context import CryptContext # Untuk hashing password
+from jose import jwt # Untuk JWT encoding/decoding
+from decouple import config # Untuk mengambil environment variables
 
-# Inisialisasi router dan tools
-router = APIRouter()
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")  # Setup password hashing
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")  # Setup OAuth2
+router = APIRouter() # Inisialisasi router
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto") # Setup password hashing
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login") # Setup OAuth2
 
-# Konfigurasi JWT
-SECRET_KEY = config("SECRET_KEY", default="your-secret-key")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+SECRET_KEY = config("JWT_SECRET_KEY", default="your-secret-key") # Ambil secret key dari environment variable
+ALGORITHM = config("JWT_ALGORITHM", default="HS256") # Ambil algoritma JWT dari environment variable
+ACCESS_TOKEN_EXPIRE_MINUTES = config("ACCESS_TOKEN_EXPIRE_MINUTES", default=30, cast=int) # Ambil waktu expiry token dari environment variable
 
-# Fungsi untuk membuat access token
-def create_access_token(data: dict):
-    to_encode = data.copy()
-    # Set waktu expired token
-    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
-    # Encode JWT dengan secret key
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
+def create_access_token(data: dict): # Fungsi untuk membuat access token
+    to_encode = data.copy() # Copy data yang akan di-encode
+    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES) # Set waktu expired token
+    to_encode.update({"exp": expire}) # Tambahkan waktu expired ke data
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM) # Encode JWT dengan secret key
+    return encoded_jwt # Return token yang sudah di-encode
 
 # Endpoint untuk registrasi user baru
-@router.post("/register", response_model=UserResponse)
-async def register(user: UserRegister, db=Depends(get_database)):
+@router.post(
+    "/register",
+    response_model=UserResponse,
+    summary="Register User Baru",
+    description="Mendaftarkan user baru dengan email, username, dan password"
+)
+
+# Endpoint untuk registrasi user baru
+async def register(
+    # Ambil data dari request body
+    email: str = Form(..., description="Email user", email=True),
+    username: str = Form(..., description="Username", min_length=3),
+    password: str = Form(..., description="Password", min_length=6),
+    db=Depends(get_database)
+):
     # Cek apakah email sudah terdaftar
-    if await db.users.find_one({"email": user.email}):
+    if await db.users.find_one({"email": email}):
         raise HTTPException(status_code=400, detail="Email sudah terdaftar")
 
-    # Hash password user
-    hashed_password = pwd_context.hash(user.password)
+    # hash password
+    hashed_password = pwd_context.hash(password)
 
     # Siapkan data user
     user_data = {
-        "email": user.email,
-        "username": user.username,
+        "email": email,
+        "username": username,
         "password": hashed_password,
-        "is_active": True,  # User aktif by default
-        "is_admin": False,  # Bukan admin by default
-        "created_at": datetime.utcnow()  # Timestamp pembuatan
+        "is_active": True,
+        "is_admin": False,
+        "created_at": datetime.utcnow()
     }
 
-    # Insert user ke database
+    # Masukkan user ke database
     result = await db.users.insert_one(user_data)
 
-    # Return user yang dibuat
+    # Ambil user yang baru dibuat
     created_user = await db.users.find_one({"_id": result.inserted_id})
     return created_user
 
 # Endpoint untuk login user
-@router.post("/login", response_model=Token)
-async def login(form_data: OAuth2PasswordRequestForm = Depends(), db=Depends(get_database)):
+@router.post(
+    "/login",
+    response_model=Token,
+    summary="Login User",
+    description="Login user dengan email dan password untuk mendapatkan access token"
+)
+async def login(
+    # Ambil data dari request body
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db=Depends(get_database)
+):
     # Cek apakah user ada
     user = await db.users.find_one({"email": form_data.username})
     if not user:
@@ -934,7 +952,7 @@ Keamanan:
 - Pesan error yang aman (tidak mengungkapkan detail teknis)
 - Validasi status user saat login
 
-## TAHAP 4: IMPLEMENTASI CORE MODULES
+## TAHAP 3: IMPLEMENTASI CORE MODULES
 
 ### Langkah 1: Programs Module
 
@@ -1333,7 +1351,7 @@ Fitur utama:
 - Validasi data menggunakan Pydantic models
 - Error handling untuk kasus partner tidak ditemukan
 
-## TAHAP 5: SETUP MAIN APPLICATION
+## TAHAP 4: SETUP MAIN APPLICATION
 
 ### Langkah 1: Implementasi Main App
 
@@ -1582,7 +1600,7 @@ Catatan:
 - Semua data memiliki timestamp created_at
 - Koneksi database ditutup setelah selesai
 
-## TAHAP 6: TESTING API ENDPOINTS
+## TAHAP 5: TESTING API ENDPOINTS
 
 ### Langkah 1: Testing Authentication
 
@@ -1660,7 +1678,7 @@ image: [select file]
    - Upload too large file
    - Upload without required fields
 
-## TAHAP 7: DOKUMENTASI API
+## TAHAP 6: DOKUMENTASI API
 
 ### Langkah 1: Setup Swagger UI
 
@@ -1673,24 +1691,24 @@ app = FastAPI(
     version="1.0.0",
     openapi_tags=[
         {
-            "name": "authentication",
-            "description": "Operations with user authentication"
+            "name": "authentication", 
+            "description": "Operasi terkait autentikasi pengguna"
         },
         {
             "name": "programs",
-            "description": "CRUD operations for programs"
+            "description": "Operasi CRUD untuk program"
         },
         {
             "name": "blogs",
-            "description": "Blog management endpoints"
+            "description": "Endpoint untuk manajemen blog"
         },
         {
             "name": "gallery",
-            "description": "Gallery management endpoints"
+            "description": "Endpoint untuk manajemen galeri"
         },
         {
             "name": "partners",
-            "description": "Partner management endpoints"
+            "description": "Endpoint untuk manajemen partner"
         }
     ]
 )
@@ -1711,7 +1729,7 @@ async def register(user: UserRegister, db=Depends(get_database)):
     """
 ```
 
-## TAHAP 8: SECURITY ENHANCEMENTS
+## TAHAP 7: SECURITY ENHANCEMENTS
 
 ### Langkah 1: CORS Setup
 
@@ -1763,7 +1781,7 @@ async def general_exception_handler(request, exc):
     )
 ```
 
-## TAHAP 9: DEPLOYMENT PREPARATION
+## TAHAP 8: DEPLOYMENT PREPARATION
 
 ### Langkah 1: Environment Setup
 
@@ -2070,3 +2088,53 @@ async def trigger_webhook(event_type: str, payload: dict):
    - Monitor response times
    - Alert on high failure rates
    - Log detailed error information
+
+### Langkah 5: Menjalankan Server
+
+1. Pastikan berada di root folder project (backend)
+
+2. Aktifkan virtual environment:
+
+- Windows:
+
+```bash
+venv\Scripts\activate
+```
+
+- Linux/Mac:
+
+```bash
+source venv/bin/activate
+```
+
+3. Jalankan server dalam mode development:
+
+```bash
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+Penjelasan command:
+
+- `app.main`: Path ke file main.py (dalam folder app)
+- `app`: Instance FastAPI di main.py
+- `--reload`: Auto reload saat ada perubahan kode
+- `--host 0.0.0.0`: Bisa diakses dari luar
+- `--port 8000`: Port yang digunakan
+
+4. Akses API melalui browser:
+
+- Swagger UI: http://localhost:8000/docs
+- ReDoc: http://localhost:8000/redoc
+
+5. Untuk mode production:
+
+```bash
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+```
+
+Penjelasan tambahan:
+
+- Hilangkan flag `--reload` di production
+- Tambahkan `--workers` sesuai jumlah CPU
+- Gunakan process manager seperti Supervisor
+- Pastikan sudah setup HTTPS/SSL

@@ -3,10 +3,9 @@ from fastapi.security import OAuth2PasswordBearer
 from app.core.database import get_database
 from jose import jwt, JWTError
 from decouple import config
-from app.api.endpoints.auth import ALGORITHM
+from app.api.endpoints.auth import ALGORITHM, SECRET_KEY
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
-SECRET_KEY = config("SECRET_KEY", default="idkwhy")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 async def get_current_user(token: str = Depends(oauth2_scheme), db=Depends(get_database)):
     credentials_exception = HTTPException(

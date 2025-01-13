@@ -1,33 +1,62 @@
 from fastapi import APIRouter, HTTPException, Depends, Form, UploadFile, File, Query
-from app.models.schemas import BlogBase, BlogResponse, ResponseEnvelope
+from app.models.schemas import BlogResponse, ResponseEnvelope
 from app.core.database import get_database
 from app.api.deps import get_current_active_user
 from app.utils.file_handler import save_upload_file
-from typing import List, Optional
+from typing import Optional
 from datetime import datetime
 import logging
 
-router = APIRouter()
+router = APIRouter(tags=["blogs"])
 logger = logging.getLogger(__name__)
 
-@router.post("", response_model=BlogResponse)
+@router.post(
+    "", 
+    response_model=BlogResponse,
+    summary="Membuat Blog Baru",
+    description="""
+    Membuat blog baru dengan gambar.
+    
+    **Format Gambar yang Didukung:**
+    - JPG/JPEG
+    - PNG
+    - GIF
+    
+    **Batasan:**
+    - Ukuran maksimal file: 5MB
+    """
+)
 async def create_blog(
-    title: str = Form(...),
-    content: str = Form(...),
-    image: Optional[UploadFile] = File(None),
+    title: str = Form(..., description="Judul blog yang akan dibuat", example="Tutorial Python"),
+    content: str = Form(..., description="Konten atau isi blog", example="Python adalah bahasa pemrograman yang mudah dipelajari..."),
+    image: UploadFile = File(
+        ..., 
+        description="File gambar untuk blog (JPG, PNG, GIF, max 5MB)",
+        media_type="image/*"
+    ),
     db=Depends(get_database),
     current_user=Depends(get_current_active_user)
 ):
-    # Handle image upload if provided
-    image_url = None
-    if image:
-        image_url = await save_upload_file(image)
+    """
+    Membuat blog baru dengan gambar.
+    
+    Parameters:
+    - **title**: Judul blog
+    - **content**: Konten blog
+    - **image**: File gambar (max 5MB, format: JPG/PNG/GIF)
+    
+    Returns:
+    - Blog yang berhasil dibuat
+    """
+    # Upload gambar
+    image_url = await save_upload_file(image)
     
     blog_data = {
         "title": title,
         "content": content,
-        "image_url": image_url,
-        "created_at": datetime.utcnow()
+        "image": image_url,
+        "created_at": datetime.utcnow(),
+        "author": current_user["email"]
     }
     
     result = await db.blogs.insert_one(blog_data)
@@ -58,9 +87,13 @@ async def get_blogs(
         # Get paginated results
         blogs = await db.blogs.find(query).skip(skip).limit(limit).to_list(limit)
         
+        # Convert ObjectId to string
+        for blog in blogs:
+            blog["_id"] = str(blog["_id"])
+        
         return ResponseEnvelope(
             status="success",
-            message="Blogs retrieved successfully",
+            message="Blog berhasil diambil",
             data=blogs,
             meta={
                 "total": total_count,
@@ -76,9 +109,20 @@ async def get_blogs(
 @router.get("/{blog_id}", response_model=BlogResponse)
 async def get_blog(blog_id: str, db=Depends(get_database)):
     from bson import ObjectId
-    blog = await db.blogs.find_one({"_id": ObjectId(blog_id)})
+    try:
+        object_id = ObjectId(blog_id)
+    except:
+        raise HTTPException(
+            status_code=400,
+            detail="ID blog tidak valid. ID harus berupa 24 karakter hex string."
+        )
+        
+    blog = await db.blogs.find_one({"_id": object_id})
     if not blog:
-        raise HTTPException(status_code=404, detail="Blog not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Blog tidak ditemukan"
+        )
     return blog
 
 @router.delete("/{blog_id}")
@@ -88,7 +132,18 @@ async def delete_blog(
     current_user=Depends(get_current_active_user)
 ):
     from bson import ObjectId
-    result = await db.blogs.delete_one({"_id": ObjectId(blog_id)})
+    try:
+        object_id = ObjectId(blog_id)
+    except:
+        raise HTTPException(
+            status_code=400,
+            detail="ID blog tidak valid. ID harus berupa 24 karakter hex string."
+        )
+        
+    result = await db.blogs.delete_one({"_id": object_id})
     if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Blog not found")
-    return {"message": "Blog deleted successfully"}
+        raise HTTPException(
+            status_code=404,
+            detail="Blog tidak ditemukan"
+        )
+    return {"message": "Blog berhasil dihapus"}
