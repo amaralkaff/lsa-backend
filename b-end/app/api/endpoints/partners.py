@@ -37,7 +37,7 @@ def convert_objectid(doc: Dict[str, Any]) -> Dict[str, Any]:
 )
 async def create_partner(
     name: str = Form(..., description="Nama partner/mitra", examples=["Universitas Indonesia"]),
-    description: str = Form(..., description="Deskripsi partner/mitra", examples=["Mitra dalam penyelenggaraan workshop..."]),
+    description: str = Form(None, description="Deskripsi partner/mitra", examples=["Mitra dalam penyelenggaraan workshop..."]),
     website_url: str = Form(..., description="URL website partner", examples=["https://www.ui.ac.id"]),
     logo: UploadFile = File(
         ..., 
@@ -66,7 +66,7 @@ async def create_partner(
     
     partner_data = {
         "name": name,
-        "description": description,
+        "description": description or "",
         "website_url": website_url,
         "logo": logo_url,
         "created_at": datetime.utcnow(),

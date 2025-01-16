@@ -9,7 +9,6 @@ from typing import List, Dict, Any
 from datetime import datetime
 from bson import ObjectId
 import os
-import shutil
 
 router = APIRouter(tags=["gallery"])
 
@@ -37,8 +36,8 @@ def convert_objectid(doc: Dict[str, Any]) -> Dict[str, Any]:
     """
 )
 async def create_gallery(
-    title: str = Form(..., description="Judul foto", examples=["Workshop Batch 2023"]),
-    description: str = Form(..., description="Deskripsi foto", examples=["Dokumentasi kegiatan workshop..."]),
+    title: str = Form(None, description="Judul foto", examples=["Workshop Batch 2023"]),
+    description: str = Form(None, description="Deskripsi foto", examples=["Dokumentasi kegiatan workshop..."]),
     image: UploadFile = File(
         ..., 
         description="File foto (JPG, PNG, GIF, max 5MB)",
@@ -52,8 +51,8 @@ async def create_gallery(
         image_url = await save_upload_file(image)
         
         gallery_data = {
-            "title": title,
-            "description": description,
+            "title": title or "",
+            "description": description or "",
             "image": image_url,
             "created_at": datetime.utcnow(),
             "author": current_user["email"]

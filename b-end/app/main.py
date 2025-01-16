@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.database import connect_to_mongo, close_mongo_connection
 from app.api.endpoints import programs, auth, blog, gallery, partners
@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from decouple import config
 import uuid
 import logging
+from fastapi.security import OAuth2PasswordBearer
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -15,6 +16,9 @@ logger = logging.getLogger(__name__)
 # Load environment variables
 DEBUG_MODE = config("DEBUG_MODE", default=False, cast=bool)
 ALLOWED_ORIGINS = config("ALLOWED_ORIGINS", default="*").split(",")
+
+# OAuth2 configuration
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 
 app = FastAPI(
     title="Lembaga Sinergi Analitika API",
@@ -53,6 +57,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 @app.middleware("http")
 async def add_request_id(request: Request, call_next):
     request_id = str(uuid.uuid4())
@@ -74,6 +79,13 @@ app.include_router(programs.router, prefix="/programs", tags=["programs"])
 app.include_router(blog.router, prefix="/blogs", tags=["blogs"])
 app.include_router(gallery.router, prefix="/gallery", tags=["gallery"])
 app.include_router(partners.router, prefix="/partners", tags=["partners"])
+
+# Tambahkan security scheme ke FastAPI
+app.swagger_ui_init_oauth = {
+    "usePkceWithAuthorizationCodeGrant": True,
+    "clientId": "",
+    "clientSecret": ""
+}
 
 if __name__ == "__main__":
     uvicorn.run(
